@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EcoVecinos · Reportes comunitarios de basura con seguimiento verificable</title>
+  <meta name="description" content="EcoVecinos conecta a vecinos, juntas vecinales y municipalidad para reportar focos de basura, dar seguimiento y verificar la limpieza con evidencia.">
+  <meta name="theme-color" content="#1e5b3a">
+  <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#demo">Saltar a la aplicación</a>
+
+  <header class="header">
+    <div class="container header-content">
+      <a class="brand" href="#inicio" aria-label="EcoVecinos, ir al inicio"><img src="../assets/logo.svg" alt="" width="36" height="36"> EcoVecinos</a>
+      <nav aria-label="Navegación principal">
+        <ul class="nav-list">
+          <li><a href="#como-funciona">Cómo funciona</a></li>
+          <li><a href="#demo">Probar la demo</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="inicio">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero-grid">
+        <div>
+          <h1 id="hero-title">Reporta, da seguimiento y verifica la limpieza de tu barrio</h1>
+          <p class="hero-lead">EcoVecinos conecta a vecinos, juntas vecinales y municipalidad en un solo lugar: tú reportas en menos de un minuto y ves qué pasó con tu reporte.</p>
+          <a class="btn btn-primary" href="#demo">Probar la demo</a>
+        </div>
+        <ul class="hero-points" aria-label="Beneficios principales">
+          <li><strong>Un reporte, un código.</strong> Foto con fecha, hora y ubicación; sabes siempre en qué estado está.</li>
+          <li><strong>Sin confrontaciones.</strong> Puedes reportar de forma reservada; la app nunca pide datos de otras personas.</li>
+          <li><strong>Limpieza verificada.</strong> Un reporte se cierra solo con una foto de «después» aprobada.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="como-funciona" class="container section" aria-labelledby="cf-title">
+      <h2 id="cf-title">Cómo funciona</h2>
+      <ol class="how">
+        <li class="card"><span class="how-n" aria-hidden="true">1</span><h3>Reporta</h3><p>Toma una foto y confirma la ubicación. El reporte llega a la municipalidad y a la junta de tu zona sin que elijas a quién.</p></li>
+        <li class="card"><span class="how-n" aria-hidden="true">2</span><h3>Sigue el estado</h3><p>Pendiente, en atención o resuelto: lo ves en tu historial y recibes avisos cuando cambia.</p></li>
+        <li class="card"><span class="how-n" aria-hidden="true">3</span><h3>Participa</h3><p>Inscríbete a faenas de limpieza de tu junta o del municipio y entérate de qué insumos llevar.</p></li>
+        <li class="card"><span class="how-n" aria-hidden="true">4</span><h3>Verifica</h3><p>La cuadrilla sube la foto de «después»; el personal municipal compara y recién entonces cierra el reporte.</p></li>
+      </ol>
+    </section>
+
+    <section id="demo" class="container section" aria-labelledby="demo-title">
+      <h2 id="demo-title">Demo interactiva</h2>
+      <p class="text-muted">Esta demo guarda los datos solo en tu navegador. Cambia de rol para ver cada experiencia; todo lo que hagas se refleja en los demás roles.</p>
+
+      <div class="toolbar">
+        <div class="form-row">
+          <label for="userRole">Ver como</label>
+          <select id="userRole">
+            <option value="vecino">Vecino</option>
+            <option value="dirigente">Dirigente de junta</option>
+            <option value="municipal">Municipalidad</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-secondary bell" id="bell" aria-label="Notificaciones">🔔 <span class="bell-count" id="bellCount" hidden>0</span></button>
+      </div>
+
+      <div class="tabs" role="tablist" id="tablist" aria-label="Secciones de la aplicación"></div>
+      <div id="tabpanel" role="tabpanel" tabindex="-1"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p><strong>EcoVecinos</strong> · Proyecto académico HCI for UX Design (UPC). Las zonas, juntas y datos son de demostración.</p>
+      <p class="footer-small">Privacidad: la ubicación y las fotos se usan solo para registrar el reporte, conforme a la Ley N.° 29733 de Protección de Datos Personales. El permiso de ubicación se solicita únicamente cuando inicias un reporte.</p>
+      <p><button type="button" class="btn btn-ghost" id="resetDemo">Restablecer datos de demostración</button></p>
+    </div>
+  </footer>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
+
+  <dialog id="dialog" aria-labelledby="dialogTitle">
+    <div class="dialog-head">
+      <h2 id="dialogTitle"></h2>
+      <button type="button" class="btn btn-ghost" id="dialogClose" aria-label="Cerrar ventana">✕ Cerrar</button>
+    </div>
+    <div id="dialogBody"></div>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="../js/util.js"></script>
+  <script src="../js/geo.js"></script>
+  <script src="../js/camera.js"></script>
+  <script src="../js/store.js"></script>
+  <script src="../js/map.js"></script>
+  <script src="../js/vecino.js"></script>
+  <script src="../js/dirigente.js"></script>
+  <script src="../js/municipal.js"></script>
+  <script src="../js/main.js"></script>
+</body>
+</html>
