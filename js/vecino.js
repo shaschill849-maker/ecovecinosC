@@ -24,7 +24,7 @@ EV.views.vecino = (function () {
         <dl class="dl">
           <dt>Estado</dt><dd aria-live="polite">${EV.ui.badge(r.status)} <span class="text-muted">Se actualiza automáticamente.</span></dd>
           <dt>Zona</dt><dd>${esc(z.name)} · ${U.fmtCoords(r.lat, r.lng)}</dd>
-          <dt>Enviado</dt><dd>${U.fmtDateTime(r.createdAt)}${r.reserved && mine ? ' · 🔒 Reporte reservado' : ''}</dd>
+          <dt>Enviado</dt><dd>${U.fmtDateTime(r.createdAt)}${r.reserved && mine ? ' ·  Reporte reservado' : ''}</dd>
           ${r.tipo ? `<dt>Tipo</dt><dd>${esc(S.TIPOS[r.tipo].label)}</dd>` : ''}${r.tamano ? `<dt>Tamaño</dt><dd>${esc(S.TAMANOS[r.tamano].label)}</dd>` : ''}
           ${r.supporters.length ? `<dt>Apoyos</dt><dd>${r.supporters.length} vecino(s) más reportaron este punto</dd>` : ''}
         </dl>
@@ -179,7 +179,7 @@ EV.views.vecino = (function () {
           <h2>${created.joined ? 'Te sumaste al reporte' : '¡Reporte enviado!'}</h2>
           <p>Tu código de seguimiento es:</p><p class="code">${esc(r.id)}</p>
           <p class="text-muted">Quedó en tu historial y fue derivado a ${esc(S.MUNI)} y a la ${esc(j ? j.name : 'junta de la zona')}.</p>
-          ${r.reserved && !created.joined ? '<p class="text-muted">🔒 Reporte reservado: tu nombre no se muestra a otros vecinos.</p>' : ''}</div>
+          ${r.reserved && !created.joined ? '<p class="text-muted"> Reporte reservado: tu nombre no se muestra a otros vecinos.</p>' : ''}</div>
         <div class="form-actions"><button type="button" class="btn btn-primary" id="goMine">Ver mis reportes</button>
         <button type="button" class="btn btn-secondary" id="again">Hacer otro reporte</button></div></div>`;
       root.querySelector('#goMine').addEventListener('click', () => EV.app.goTab('mis'));
@@ -195,7 +195,7 @@ EV.views.vecino = (function () {
     root.innerHTML = `<div class="card"><h2>Reportes activos cerca de mí</h2>
       <p class="text-muted">Revisa si el foco ya fue reportado antes de crear uno nuevo.</p>
       <div class="form-row"><label for="rad">Radio de búsqueda</label><select id="rad"><option value="200">200 m</option><option value="500" selected>500 m</option><option value="1000">1 km</option><option value="2000">2 km</option></select>
-      <button type="button" class="btn btn-secondary" id="loc">📍 Actualizar mi ubicación</button></div>
+      <button type="button" class="btn btn-secondary" id="loc"> Actualizar mi ubicación</button></div>
       <div id="nearMap" class="map" role="region" aria-label="Mapa de reportes activos cercanos"></div>
       <div id="nearList" aria-live="polite"></div></div>`;
     const center = () => EV.geo.get();
@@ -237,7 +237,7 @@ EV.views.vecino = (function () {
       root.querySelector('#list').innerHTML = list.length ? `<ul class="item-list">${list.map(r => `<li class="item">
         <img class="thumb" src="${r.photo.dataUrl}" alt="Foto del reporte ${esc(r.id)}">
         <div class="item-main"><strong>${esc(r.id)}</strong> ${EV.ui.badge(r.status)}<br>
-        <span class="text-muted">${U.fmtDateTime(r.createdAt)} · ${esc(S.zoneById(r.zone).name)}<br>${U.fmtCoords(r.lat, r.lng)}${r.reserved ? ' · 🔒 Reservado' : ''}</span></div>
+        <span class="text-muted">${U.fmtDateTime(r.createdAt)} · ${esc(S.zoneById(r.zone).name)}<br>${U.fmtCoords(r.lat, r.lng)}${r.reserved ? ' ·  Reservado' : ''}</span></div>
         <button class="btn btn-secondary btn-sm" data-open="${r.id}">Ver detalle</button></li>`).join('')}</ul>`
         : `<p class="empty">${mine.length ? 'No hay reportes con ese estado.' : 'Todavía no has enviado reportes.'}</p>`;
     }
@@ -264,7 +264,7 @@ EV.views.vecino = (function () {
         const inn = mineIn(f), canCancel = U.startOf(f) - Date.now() >= 24 * 36e5;
         return `<li class="item item--col"><div><strong>${U.fmtDate(U.startOf(f))} · ${esc(f.time)}</strong> — ${esc(f.place)}<br>
           <span class="text-muted">Organiza: ${esc(f.organizerName)} (${f.organizer === 'junta' ? 'junta vecinal' : 'municipio'}) · a ${U.fmtDist(d)} · ${f.inscritos.length} inscrito(s)</span><br>
-          <span class="badge ${f.implementos ? 'badge--resolved' : 'badge--pending'}">${f.implementos ? '🧤 Implementos garantizados (guantes y bolsas)' : '⚠ Trae tus propios implementos'}</span></div>
+          <span class="badge ${f.implementos ? 'badge--resolved' : 'badge--pending'}">${f.implementos ? ' Implementos garantizados (guantes y bolsas)' : '⚠ Trae tus propios implementos'}</span></div>
           <p>${esc(f.desc)}</p>
           ${inn ? `<div class="notice notice--soft"><strong>Qué llevar:</strong> ${f.insumosVecinos ? esc(f.insumosVecinos) : 'No necesitas llevar nada adicional.'}<br><span class="text-muted">La junta/municipio aporta: ${esc(f.insumosJunta || '—')}</span></div>` : '<p class="text-muted">Inscríbete para ver qué insumos debes llevar.</p>'}
           <div class="form-actions">${inn
@@ -295,10 +295,10 @@ EV.views.vecino = (function () {
     return { refresh: draw };
   }
 
-  return { tabs: [
-    { id: 'reportar', label: '📷 Reportar', render: reportar },
-    { id: 'cerca', label: '🗺️ Cerca de mí', render: cerca },
-    { id: 'mis', label: '📋 Mis reportes', render: mis },
-    { id: 'faenas', label: '🧹 Faenas', render: faenas }
-  ] };
+return { tabs: [
+  { id: 'reportar', icon: '../assets/camara.svg', label: 'Reportar', render: reportar },
+  { id: 'cerca', icon: '../assets/cercaMio.svg', label: 'Cerca de mí', render: cerca },
+  { id: 'mis', icon: '../assets/mis.svg', label: 'Mis reportes', render: mis },
+  { id: 'faenas', icon: '../assets/faena.svg', label: 'Faenas', render: faenas }
+] };
 })();

@@ -210,3 +210,23 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+
+/* Animación para la tarjeta interactiva "Reporta" */
+#tarjeta-reporta {
+  transition: all 0.3s ease;
+}
+
+#tarjeta-reporta .contenido-oculto {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
+  transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease;
+}
+
+#tarjeta-reporta.activa .contenido-oculto {
+  max-height: 200px; /* Espacio suficiente para que el texto se expanda */
+  opacity: 1;
+  margin-top: 0.5rem;
+}

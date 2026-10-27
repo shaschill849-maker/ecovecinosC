@@ -11,7 +11,7 @@ EV.app = (function () {
   let tabId = null, current = {};
   const $ = id => document.getElementById(id);
 
-  function tabsOf(r) { return EV.views[r].tabs; }
+  function tabsOf(r) { return EV.views[r].tabs; } 
 
   function renderTabs() {
     const list = $('tablist');
@@ -96,3 +96,29 @@ EV.app = (function () {
   document.addEventListener('DOMContentLoaded', init);
   return { goTab, setRole };
 })();
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Seleccionamos TODAS las tarjetas que tengan la clase 'tarjeta-interactiva'
+  const tarjetas = document.querySelectorAll('.tarjeta-interactiva');
+
+  tarjetas.forEach(tarjeta => {
+    tarjeta.addEventListener('click', (event) => {
+      // (Opcional) Si quieres que al abrir una se cierren las demás automáticamente:
+      tarjetas.forEach(t => { 
+        if (t !== tarjeta) t.classList.remove('activa'); 
+      });
+
+      // Alterna el estado abierto/cerrado de la tarjeta a la que le diste clic
+      tarjeta.classList.toggle('activa');
+      event.stopPropagation(); // Evita que el clic se propague al documento
+    });
+  });
+
+  // Cerrar todas las tarjetas al hacer clic en cualquier otra parte de la página
+  document.addEventListener('click', () => {
+    tarjetas.forEach(tarjeta => {
+      tarjeta.classList.remove('activa');
+    });
+  });
+});
