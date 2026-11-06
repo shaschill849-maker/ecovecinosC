@@ -1,10 +1,8 @@
-/* ==========================================================================
-   EcoVecinos · geo.js
-   Ubicación del usuario. El permiso se solicita SOLO cuando el vecino inicia
-   la función de reporte (HU-02), con un aviso previo de privacidad.
-   ========================================================================== */
+/* EcoVecinos · geo.js
+   Ubicación del usuario. El permiso se pide solo cuando el vecino inicia un
+   reporte y tras un aviso de privacidad (HU-02). */
 EV.geo = (function () {
-  // Ubicación por defecto (centro de Lima) hasta que el usuario conceda el permiso.
+  // Centro de Lima hasta que el usuario conceda el permiso.
   let loc = { lat: -12.04318, lng: -77.02824, exact: false };
 
   function request() {

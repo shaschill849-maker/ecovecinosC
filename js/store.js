@@ -1,16 +1,15 @@
-/* ==========================================================================
-   EcoVecinos · store.js
+/* EcoVecinos · store.js
    Capa de datos (simula un backend con localStorage) y reglas de negocio:
-   jurisdicción por GPS (HU-02), puntaje de prioridad (HU-21), agrupación de
-   reportes (HU-22), atrasos (HU-20, HU-44) y notificaciones.
-   Todo cambio llama a save(), que emite el evento 'ev:data' para que las
-   vistas se actualicen solas (también entre pestañas del navegador).
-   ========================================================================== */
+   jurisdicción por GPS (HU-02), prioridad (HU-21), agrupación (HU-22),
+   atrasos (HU-20, HU-44) y notificaciones.
+   save() persiste y emite 'ev:data' para que las vistas se refresquen; el
+   evento 'storage' propaga los cambios entre pestañas del navegador. */
 EV.store = (function () {
   const KEY = 'ecovecinos.v2';
   const H = 36e5, D = 864e5;
+  const storage = EV.util.storage;
 
-  /* ---------- Catálogos (datos de demostración) ---------- */
+  /* ---------- Catálogos de demostración ---------- */
   const ZONES = [
     { id: 'z1', name: 'Cercado – Barrios Altos', lat: -12.0464, lng: -77.0306, density: 3 },
     { id: 'z2', name: 'Rímac – Alameda',         lat: -12.0300, lng: -77.0400, density: 2 },
@@ -23,37 +22,44 @@ EV.store = (function () {
   ];
   const MUNI = 'Municipalidad (demo)';
   const TIPOS = {
-    domiciliario: { label: 'Residuos domiciliarios',             risk: 2 },
-    desmonte:     { label: 'Desmonte o escombros',               risk: 1 },
-    organico:     { label: 'Residuos orgánicos (malos olores)',  risk: 3 },
-    peligroso:    { label: 'Residuos peligrosos o médicos',      risk: 3 }
+    domiciliario: { label: 'Residuos domiciliarios',            risk: 2 },
+    desmonte:     { label: 'Desmonte o escombros',              risk: 1 },
+    organico:     { label: 'Residuos orgánicos (malos olores)', risk: 3 },
+    peligroso:    { label: 'Residuos peligrosos o médicos',     risk: 3 }
   };
-  const TAMANOS = { pequeno: { label: 'Pequeño (una bolsa o poco más)', v: 1 }, mediano: { label: 'Mediano (varias bolsas)', v: 2 }, grande: { label: 'Grande (ocupa la vereda o pista)', v: 3 } };
+  const TAMANOS = {
+    pequeno: { label: 'Pequeño (una bolsa o poco más)',   v: 1 },
+    mediano: { label: 'Mediano (varias bolsas)',          v: 2 },
+    grande:  { label: 'Grande (ocupa la vereda o pista)', v: 3 }
+  };
   const FASES = ['Sensibilización', 'Cartelería', 'Evidencia', 'Denuncia al municipio'];
   const SOL_TIPOS = { limpieza: 'Limpieza de punto crítico', carteleria: 'Cartelería o señalización', otro: 'Otro' };
   const SOL_ESTADOS = { enviada: 'Enviada', revision: 'En revisión', atendida: 'Atendida' };
-  const CLUSTER_RADIUS = 50; // metros para agrupar reportes del mismo punto (HU-22)
+  const CLUSTER_RADIUS = 50; // metros
   const USER = 'vecino-demo';
 
   /* ---------- Estado ---------- */
   let state = load();
+  let clusterCache = null; // { state, value }: se invalida en cada save() o recarga
 
   function load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) return JSON.parse(raw);
-    } catch (e) { /* datos corruptos: se regeneran */ }
+    const raw = storage.get(KEY);
+    if (raw) {
+      try { return JSON.parse(raw); } catch (e) { /* datos corruptos: se regeneran */ }
+    }
     return seed();
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch (e) { EV.ui.toast('No se pudo guardar: el almacenamiento del navegador está lleno. Usa "Restablecer datos de demo".', 'error'); return false; }
+    clusterCache = null;
+    if (!storage.set(KEY, JSON.stringify(state))) {
+      EV.ui.toast('No se pudo guardar: el almacenamiento del navegador está lleno o bloqueado. Usa «Restablecer datos de demostración».', 'error');
+      return false;
+    }
     document.dispatchEvent(new CustomEvent('ev:data'));
     return true;
   }
-  // Si otra pestaña modifica los datos (p. ej. la municipalidad), esta se actualiza (HU-06, HU-17, HU-29).
   window.addEventListener('storage', e => {
-    if (e.key === KEY) { state = load(); document.dispatchEvent(new CustomEvent('ev:data')); }
+    if (e.key === KEY) { state = load(); clusterCache = null; document.dispatchEvent(new CustomEvent('ev:data')); }
   });
 
   function nextId(prefix, key) {
@@ -70,7 +76,7 @@ EV.store = (function () {
       id: `REP-${String(n).padStart(4, '0')}`, source: 'vecino', reserved: false, reporterId: 'otro', supporters: [],
       thread: [], after: null, override: null, closedAt: null, closedBy: null, tipo: null, tamano: null, ...o
     });
-    const t = (ago) => now - ago;
+    const t = ago => now - ago;
     const reports = [
       rep(1, { createdAt: t(3 * D), zone: 'z1', lat: -12.0468, lng: -77.0310, tipo: 'organico', tamano: 'grande', status: 'pending', supporters: ['otro2'],
         photo: photo('Basura acumulada', '#7a5c3e', t(3 * D), -12.0468, -77.0310) }),
@@ -118,9 +124,9 @@ EV.store = (function () {
       v: 2, seq: { rep: 7, fae: 3, sol: 2, cas: 1, not: 0, msg: 10 },
       reports, faenas, solicitudes, casos, notifications: [],
       settings: {
-        overdueHours: { Alta: 24, Media: 72, Baja: 168 },           // HU-20
-        requestHours: { limpieza: 48, carteleria: 72, otro: 96 },   // HU-44
-        zoneJunta: { z1: 'j1', z2: 'j2', z3: 'j3' },                // HU-29
+        overdueHours: { Alta: 24, Media: 72, Baja: 168 },
+        requestHours: { limpieza: 48, carteleria: 72, otro: 96 },
+        zoneJunta: { z1: 'j1', z2: 'j2', z3: 'j3' },
         geoConsent: false, points: {}
       },
       filters: { zona: 'all', desde: '', hasta: '', estado: 'all', orden: 'prioridad' }
@@ -142,9 +148,14 @@ EV.store = (function () {
   const zoneById = id => ZONES.find(z => z.id === id);
   const juntaById = id => JUNTAS.find(j => j.id === id);
   const juntaOfZone = zid => juntaById(state.settings.zoneJunta[zid]);
+  /** Primera zona vinculada a una junta (para ubicar sus faenas, casos y solicitudes). */
+  const zoneOfJunta = jid => ZONES.find(z => state.settings.zoneJunta[z.id] === jid) || ZONES[0];
 
-  /* ---------- Agrupación de reportes del mismo punto (HU-22) ---------- */
+  /* ---------- Agrupación de reportes del mismo punto (HU-22) ----------
+     Union-find sobre los reportes abiertos a ≤ CLUSTER_RADIUS. Es O(n²) y lo
+     consultan priority(), isOverdue() y las listas, así que se memoriza. */
   function clusters() {
+    if (clusterCache && clusterCache.state === state) return clusterCache.value;
     const open = state.reports.filter(r => r.status !== 'resolved');
     const parent = {};
     open.forEach(r => parent[r.id] = r.id);
@@ -156,14 +167,15 @@ EV.store = (function () {
     open.forEach(r => { (groups[find(r.id)] = groups[find(r.id)] || []).push(r); });
     const byReport = {};
     Object.values(groups).forEach(members => {
-      const people = members.reduce((n, m) => n + 1 + m.supporters.length, 0); // vecinos distintos que reportaron
+      const people = members.reduce((n, m) => n + 1 + m.supporters.length, 0);
       members.forEach(m => byReport[m.id] = { members, people });
     });
+    clusterCache = { state, value: byReport };
     return byReport;
   }
 
-  /* ---------- Puntaje de prioridad (HU-21) ---------- */
-  // Pesos: volumen 30 + riesgo 30 + ubicación 20 + frecuencia 20 = 100
+  /* ---------- Puntaje de prioridad (HU-21) ----------
+     Volumen 30 + riesgo 30 + ubicación 20 + frecuencia 20 = 100. */
   function priority(r) {
     const hasSize = !!r.tamano, hasTipo = !!r.tipo;
     const vol = hasSize ? TAMANOS[r.tamano].v : 2, risk = hasTipo ? TIPOS[r.tipo].risk : 2;
@@ -185,18 +197,15 @@ EV.store = (function () {
     return { score, level, factors, eff, effScore };
   }
 
-  /* ---------- Atrasos (HU-20) ---------- */
+  /* ---------- Atrasos (HU-20, HU-44) ---------- */
   function isOverdue(r) {
     if (r.status === 'resolved') return false;
-    const lim = state.settings.overdueHours[priority(r).eff];
-    return EV.util.hoursSince(r.createdAt) > lim;
+    return EV.util.hoursSince(r.createdAt) > state.settings.overdueHours[priority(r).eff];
   }
   function overdueSolicitud(s) {
     return s.status !== 'atendida' && EV.util.hoursSince(s.lastChange) > state.settings.requestHours[s.tipo];
   }
 
-  /* ---------- Operaciones de reportes ---------- */
-  function setStatus(r, status) { r.status = status; }
   function addMessage(list, from, text) {
     list.push({ id: nextId('MSG', 'msg'), from, text, ts: Date.now() });
   }
@@ -204,9 +213,9 @@ EV.store = (function () {
   return {
     ZONES, JUNTAS, MUNI, TIPOS, TAMANOS, FASES, SOL_TIPOS, SOL_ESTADOS, CLUSTER_RADIUS, USER,
     get s() { return state; },
-    save, nextId, notify, zoneFor, zoneById, juntaById, juntaOfZone, clusters, priority, isOverdue, overdueSolicitud, setStatus, addMessage,
-    reset() { localStorage.removeItem(KEY); state = seed(); save(); },
-    /** Reportes que ve una junta: los de las zonas vinculadas a ella (HU-29). */
+    save, nextId, notify, zoneFor, zoneById, juntaById, juntaOfZone, zoneOfJunta, clusters, priority, isOverdue, overdueSolicitud, addMessage,
+    reset() { storage.remove(KEY); state = seed(); save(); },
+    /** Reportes visibles para una junta: los de las zonas vinculadas a ella (HU-29). */
     reportsOfJunta(jid) { return state.reports.filter(r => state.settings.zoneJunta[r.zone] === jid); }
   };
 })();

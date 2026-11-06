@@ -22,3 +22,25 @@
 - **`storage` event:** simula el tiempo real entre roles abiertos en dos pestañas.
 - **Foto de prueba:** permite evaluar en equipos sin cámara, marcada como no real.
 - **Textos del usuario** siempre escapados (`EV.util.esc`) antes de usar `innerHTML`.
+
+## Auditoría frontend (noviembre 2026)
+
+### Errores corregidos
+| Archivo | Problema | Efecto | Corrección |
+|---|---|---|---|
+| `map.js` | `invalidateSize` con `setTimeout` y animación de zoom sin cancelar al destruir el mapa | Error `Cannot read properties of undefined (reading '_leaflet_pos')` al cambiar de pestaña tras mover un mapa | `ResizeObserver` que se desconecta en `destroy()` y cierre explícito de la animación |
+| `camera.js` | Si se cambiaba de pestaña mientras se concedía el permiso, el stream llegaba tarde y nadie lo detenía | La cámara quedaba encendida | Bandera `destroyed`: el stream tardío se detiene |
+| `main.js` | Refresco por `ev:data` reescribía los diálogos completos | Se perdía el texto que se estaba escribiendo cuando otra pestaña cambiaba datos | Se conservan valores, foco y scroll, salvo los del formulario recién enviado |
+| `main.js`, `store.js` | `localStorage` sin `try/catch` al leer el rol | La app no arrancaba con el almacenamiento bloqueado | `EV.util.storage` seguro |
+| `main.js`, `styles.css` | Código de `.tarjeta-interactiva` / `#tarjeta-reporta` sin elementos que lo usen | Listener en cada clic del documento sin efecto | Eliminado; las tarjetas de «Cómo funciona» ahora llevan a la pestaña de la demo correspondiente |
+| `main.js` | Clic en el padding del diálogo lo cerraba | Cierre accidental | Solo cierra al pulsar fuera de la caja |
+| `dirigente.js` | Solicitudes nuevas siempre en zona `z1` | Zona incorrecta si se revincula la junta | `store.zoneOfJunta` |
+| `pages/index.html` | «Se parte… unete» | Faltas de ortografía en el titular | «Sé parte… únete» |
+| `styles.css` | Desborde horizontal de 2 px en «Evidencia» a 320 px | Scroll lateral | Revisión de anchos mínimos |
+
+### Mejoras
+- **Responsive real:** barra de pestañas inferior y diálogos como hoja inferior en móvil (≤ 767 px); tablas apiladas y botones a ancho completo (< 480 px); hero reorganizado en tablet y en dos columnas desde 1024 px; panel municipal con mapa fijo y lista lado a lado en laptop; tipografía fluida con `clamp()`.
+- **Interacción:** confirmación accesible para acciones irreversibles (cancelar faena, escalar caso, restablecer datos); estados de carga en cámara y geolocalización; notificaciones con botón «Ver» que abre el reporte, la solicitud o la faena; la foto se conserva al volver al paso 1; campos inválidos marcados con `aria-invalid` y foco en el primer error; menú con sección activa.
+- **Accesibilidad:** emojis decorativos ocultos a lectores de pantalla, foco visible sobre fondos oscuros, efectos de hover solo en dispositivos con puntero, `prefers-reduced-motion` respetado también en los desplazamientos por JavaScript y en los mapas.
+- **Rendimiento:** la agrupación de reportes (O(n²)) se memoriza por estado en lugar de recalcularse por cada reporte de la lista.
+- **Seguridad:** Leaflet desde CDN con integridad SRI.

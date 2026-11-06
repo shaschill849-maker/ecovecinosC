@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body>
@@ -18,10 +18,11 @@
 
   <header class="header">
     <div class="container header-content">
-      <a class="brand" href="#inicio" aria-label="EcoVecinos, ir al inicio"><img src="../assets/logo.svg" alt="" width="36" height="36"> EcoVecinos</a>
+      <a class="brand" href="#inicio" aria-label="EcoVecinos, ir al inicio"><img src="../assets/logo.svg" alt="" width="36" height="36"> <span>EcoVecinos</span></a>
       <nav aria-label="Navegación principal">
         <ul class="nav-list">
           <li><a href="#como-funciona">Cómo funciona</a></li>
+          <li><a class="nav-cta" href="#demo">Demo</a></li>
         </ul>
       </nav>
     </div>
@@ -30,10 +31,13 @@
   <main id="inicio">
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
-        <div>
-          <h1 id="hero-title">Se parte de nosotros y unete al cambio por un mundo mejor</h1>
+        <div class="hero-copy">
+          <h1 id="hero-title">Sé parte de nosotros y únete al cambio por un mundo mejor</h1>
           <p class="hero-lead">EcoVecinos conecta a vecinos, juntas vecinales y municipalidad en un solo lugar: tú reportas en menos de un minuto y ves qué pasó con tu reporte.</p>
-          <a class="btn btn-primary" href="#demo">Probar la demo</a>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="#demo">Probar la demo</a>
+            <a class="btn btn-outline-light btn-lg" href="#como-funciona">Cómo funciona</a>
+          </div>
         </div>
         <ul class="hero-points" aria-label="Beneficios principales">
           <li><strong>Un reporte, un código.</strong> Foto con fecha, hora y ubicación; sabes siempre en qué estado está.</li>
@@ -46,10 +50,26 @@
     <section id="como-funciona" class="container section" aria-labelledby="cf-title">
       <h2 id="cf-title">Cómo funciona</h2>
       <ol class="how">
-        <li class="card"><span class="how-n" aria-hidden="true">1</span><h3>Reporta</h3><p>Toma una foto y confirma la ubicación. El reporte llega a la municipalidad y a la junta de tu zona sin que elijas a quién.</p></li>
-        <li class="card"><span class="how-n" aria-hidden="true">2</span><h3>Sigue el estado</h3><p>Pendiente, en atención o resuelto: lo ves en tu historial y recibes avisos cuando cambia.</p></li>
-        <li class="card"><span class="how-n" aria-hidden="true">3</span><h3>Participa</h3><p>Inscríbete a faenas de limpieza de tu junta o del municipio y entérate de qué insumos llevar.</p></li>
-        <li class="card"><span class="how-n" aria-hidden="true">4</span><h3>Verifica</h3><p>La cuadrilla sube la foto de «después»; el personal municipal compara y recién entonces cierra el reporte.</p></li>
+        <li class="card how-card">
+          <span class="how-n" aria-hidden="true">1</span><h3>Reporta</h3>
+          <p>Toma una foto y confirma la ubicación. El reporte llega a la municipalidad y a la junta de tu zona sin que elijas a quién.</p>
+          <a class="how-link" href="#demo" data-goto="vecino:reportar">Hacer un reporte<span class="sr-only"> en la demo</span> <span aria-hidden="true">→</span></a>
+        </li>
+        <li class="card how-card">
+          <span class="how-n" aria-hidden="true">2</span><h3>Sigue el estado</h3>
+          <p>Pendiente, en atención o resuelto: lo ves en tu historial y recibes avisos cuando cambia.</p>
+          <a class="how-link" href="#demo" data-goto="vecino:mis">Ver mis reportes<span class="sr-only"> en la demo</span> <span aria-hidden="true">→</span></a>
+        </li>
+        <li class="card how-card">
+          <span class="how-n" aria-hidden="true">3</span><h3>Participa</h3>
+          <p>Inscríbete a faenas de limpieza de tu junta o del municipio y entérate de qué insumos llevar.</p>
+          <a class="how-link" href="#demo" data-goto="vecino:faenas">Ver faenas<span class="sr-only"> en la demo</span> <span aria-hidden="true">→</span></a>
+        </li>
+        <li class="card how-card">
+          <span class="how-n" aria-hidden="true">4</span><h3>Verifica</h3>
+          <p>La cuadrilla sube la foto de «después»; el personal municipal compara y recién entonces cierra el reporte.</p>
+          <a class="how-link" href="#demo" data-goto="municipal:panel">Abrir el panel municipal<span class="sr-only"> en la demo</span> <span aria-hidden="true">→</span></a>
+        </li>
       </ol>
     </section>
 
@@ -67,9 +87,9 @@
           </select>
         </div>
         <button type="button" class="btn btn-secondary bell" id="bell" aria-label="Notificaciones">
-  <img src="../assets/notificacion.svg" alt="" width="24" height="24" aria-hidden="true">
-  <span class="bell-count" id="bellCount" hidden>0</span>
-</button>
+          <img src="../assets/notificacion.svg" alt="" width="24" height="24">
+          <span class="bell-count" id="bellCount" hidden>0</span>
+        </button>
       </div>
       <div class="tabs" role="tablist" id="tablist" aria-label="Secciones de la aplicación"></div>
       <div id="tabpanel" role="tabpanel" tabindex="-1"></div>
@@ -77,9 +97,11 @@
   </main>
 
   <footer class="footer">
-    <div class="container">
-      <p><strong>EcoVecinos</strong> · Proyecto académico HCI for UX Design (UPC). Las zonas, juntas y datos son de demostración.</p>
-      <p class="footer-small">Privacidad: la ubicación y las fotos se usan solo para registrar el reporte, conforme a la Ley N.° 29733 de Protección de Datos Personales. El permiso de ubicación se solicita únicamente cuando inicias un reporte.</p>
+    <div class="container footer-grid">
+      <div>
+        <p><strong>EcoVecinos</strong> · Proyecto académico HCI for UX Design (UPC). Las zonas, juntas y datos son de demostración.</p>
+        <p class="footer-small">Privacidad: la ubicación y las fotos se usan solo para registrar el reporte, conforme a la Ley N.° 29733 de Protección de Datos Personales. El permiso de ubicación se solicita únicamente cuando inicias un reporte.</p>
+      </div>
       <p><button type="button" class="btn btn-ghost" id="resetDemo">Restablecer datos de demostración</button></p>
     </div>
   </footer>
@@ -89,12 +111,23 @@
   <dialog id="dialog" aria-labelledby="dialogTitle">
     <div class="dialog-head">
       <h2 id="dialogTitle"></h2>
-      <button type="button" class="btn btn-ghost" id="dialogClose" aria-label="Cerrar ventana">✕ Cerrar</button>
+      <button type="button" class="btn btn-ghost" id="dialogClose" aria-label="Cerrar ventana"><span aria-hidden="true">✕</span> Cerrar</button>
     </div>
-    <div id="dialogBody"></div>
+    <div id="dialogBody" tabindex="-1"></div>
   </dialog>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <dialog id="confirmDialog" class="dialog--confirm" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <form method="dialog">
+      <h2 id="confirmTitle"></h2>
+      <p id="confirmText"></p>
+      <div class="form-actions form-actions--end">
+        <button type="submit" class="btn btn-secondary" value="cancel" data-confirm="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary" value="ok" data-confirm="ok">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="../js/util.js"></script>
   <script src="../js/geo.js"></script>
   <script src="../js/camera.js"></script>

@@ -1,10 +1,7 @@
-/* ==========================================================================
-   EcoVecinos · camera.js
-   Componente de captura de foto SOLO con cámara (sin galería): HU-01, HU-25,
-   HU-38. Cada foto se "sella" con fecha, hora y coordenadas.
-   Si el dispositivo no tiene cámara se ofrece una foto de PRUEBA (source:'demo')
-   para poder evaluar la demo en computadoras sin webcam.
-   ========================================================================== */
+/* EcoVecinos · camera.js
+   Captura de fotos solo con la cámara, sin galería (HU-01, HU-25, HU-38).
+   Cada foto se sella con fecha, hora y coordenadas. Sin cámara disponible se
+   ofrece una foto de prueba (source: 'demo') para evaluar la demo en escritorio. */
 EV.camera = (function () {
   const streams = new Set();
 
@@ -19,7 +16,7 @@ EV.camera = (function () {
     return `${d.toLocaleDateString('es-PE')} ${d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} · ${EV.util.fmtCoords(g.lat, g.lng)}`;
   }
 
-  /** Imagen de relleno en SVG (para datos de ejemplo y foto de prueba). */
+  /** Imagen SVG de relleno para los datos de ejemplo y la foto de prueba. */
   function placeholder(title, color, stamp) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
       <rect width="640" height="400" fill="${color}"/>
@@ -31,29 +28,32 @@ EV.camera = (function () {
   }
 
   /**
-   * Monta el componente dentro de `root`.
-   * opts.onChange(photo|null) se llama al capturar o reiniciar.
-   * Devuelve { getPhoto, reset, destroy }.
+   * Monta el componente en `root`.
+   * opts.onChange(photo | null) se invoca al capturar o reiniciar.
+   * opts.initial: foto ya tomada que se muestra al volver a este paso.
    */
   function mount(root, opts = {}) {
+    const ico = EV.ui.icon;
     root.innerHTML = `
       <div class="camera">
-        <video class="camera-video" autoplay playsinline muted hidden aria-label="Vista previa de la cámara"></video>
-        <img class="camera-result" alt="Foto capturada con fecha, hora y ubicación" hidden>
+        <div class="camera-frame">
+          <video class="camera-video" autoplay playsinline muted hidden aria-label="Vista previa de la cámara"></video>
+          <img class="camera-result" alt="Foto capturada con fecha, hora y ubicación" hidden>
+        </div>
         <p class="camera-msg text-muted" role="status"></p>
         <div class="camera-actions">
-          <button type="button" class="btn btn-secondary" data-cam="open">📷 Abrir cámara</button>
-          <button type="button" class="btn btn-primary" data-cam="shoot" hidden>📸 Tomar foto</button>
-          <button type="button" class="btn btn-secondary" data-cam="retake" hidden>↺ Repetir foto</button>
+          <button type="button" class="btn btn-secondary" data-cam="open">${ico('📷')} Abrir cámara</button>
+          <button type="button" class="btn btn-primary" data-cam="shoot" hidden>${ico('📸')} Tomar foto</button>
+          <button type="button" class="btn btn-secondary" data-cam="retake" hidden>${ico('↺')} Repetir foto</button>
           <button type="button" class="btn btn-ghost" data-cam="demo" hidden>Usar foto de prueba</button>
         </div>
       </div>`;
     const $ = s => root.querySelector(s);
     const video = $('.camera-video'), img = $('.camera-result'), msg = $('.camera-msg');
     const btn = { open: $('[data-cam=open]'), shoot: $('[data-cam=shoot]'), retake: $('[data-cam=retake]'), demo: $('[data-cam=demo]') };
-    let stream = null, photo = null;
+    let stream = null, photo = null, destroyed = false;
 
-    function show(el, v) { el.hidden = !v; }
+    const show = (el, v) => { el.hidden = !v; };
     function stopStream() {
       if (stream) { stream.getTracks().forEach(t => t.stop()); streams.delete(stream); stream = null; }
       video.srcObject = null;
@@ -77,15 +77,22 @@ EV.camera = (function () {
         msg.textContent = 'Este navegador no permite usar la cámara (se requiere HTTPS). Puedes usar una foto de prueba.';
         show(btn.demo, true); return;
       }
+      EV.ui.setBusy(btn.open, true, 'Abriendo cámara…');
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        streams.add(stream);
-        video.srcObject = stream;
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        // El usuario pudo cambiar de pestaña mientras se concedía el permiso: no dejar la cámara encendida.
+        if (destroyed) { s.getTracks().forEach(t => t.stop()); return; }
+        stream = s; streams.add(s);
+        video.srcObject = s;
         show(video, true); show(btn.open, false); show(btn.shoot, true); show(btn.demo, false);
         msg.textContent = 'Apunta al foco de basura y toma la foto.';
+        btn.shoot.focus();
       } catch (err) {
+        if (destroyed) return;
         msg.textContent = 'No pudimos acceder a la cámara (permiso denegado o sin cámara). Puedes usar una foto de prueba.';
         show(btn.demo, true);
+      } finally {
+        EV.ui.setBusy(btn.open, false);
       }
     });
 
@@ -96,12 +103,12 @@ EV.camera = (function () {
       c.width = Math.round(video.videoWidth * scale); c.height = Math.round(video.videoHeight * scale);
       const ctx = c.getContext('2d');
       ctx.drawImage(video, 0, 0, c.width, c.height);
-      const text = stampText();
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, c.height - 30, c.width, 30);
-      ctx.fillStyle = '#fff'; ctx.font = '15px Arial'; ctx.fillText(text, 10, c.height - 10);
+      ctx.fillStyle = '#fff'; ctx.font = '15px Arial'; ctx.fillText(stampText(), 10, c.height - 10);
       const g = EV.geo.get();
       stopStream();
       setPhoto({ dataUrl: c.toDataURL('image/jpeg', 0.6), ts: Date.now(), lat: g.lat, lng: g.lng, source: 'camera' });
+      btn.retake.focus();
     });
 
     btn.retake.addEventListener('click', () => { setPhoto(null); btn.open.click(); });
@@ -109,12 +116,15 @@ EV.camera = (function () {
     btn.demo.addEventListener('click', () => {
       const g = EV.geo.get();
       setPhoto({ dataUrl: placeholder('FOTO DE PRUEBA', '#5b6b5f', stampText()), ts: Date.now(), lat: g.lat, lng: g.lng, source: 'demo' });
+      btn.retake.focus();
     });
+
+    if (opts.initial) setPhoto(opts.initial);
 
     return {
       getPhoto: () => photo,
       reset: () => { stopStream(); setPhoto(null); },
-      destroy: () => stopStream()
+      destroy: () => { destroyed = true; stopStream(); }
     };
   }
   return { mount, stopAll, placeholder };
