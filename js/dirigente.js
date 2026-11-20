@@ -1,193 +1,595 @@
-EV.camera = (function () {
-  const activos = [];
-  const sinMovimiento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+EV.views.dirigente = (function () {
+  const S = EV.store;
+  const U = EV.util;
+  const esc = U.esc;
+  const JID = 'j1';
+  const PUNTOS_POR_FAENA = 10;
+  const FROM = { vecino: 'Vecino', municipal: 'Municipalidad', dirigente: 'Tú (junta)' };
+  const junta = () => S.juntaById(JID);
+  const setError = EV.ui.setError;
 
-  function stopAll() {
-    activos.forEach(stream => stream.getTracks().forEach(t => t.stop()));
-    activos.length = 0;
+  // HU-44 Notificar solicitud sin respuesta al ingresar
+  function checkAlerts() {
+    S.quitarAvisos('seguimiento');
+    S.s.solicitudes
+      .filter(s => s.juntaId === JID && S.overdueSolicitud(s))
+      .forEach(s => {
+        const horas = Math.round(U.hoursSince(s.lastChange));
+        S.notify('dirigente', 'Seguimiento pendiente: la solicitud ' + s.id + ' lleva ' + horas + ' h sin respuesta.', s.id, null, 'seguimiento');
+      });
+    S.save();
   }
 
-  function sello() {
-    const g = EV.geo.get();
-    const d = new Date();
-    return d.toLocaleDateString('es-PE') + ' ' + EV.util.horaTexto(d) + ' - ' + EV.util.fmtCoords(g.lat, g.lng);
-  }
-
-  function placeholder(titulo, color, textoSello) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
-      <rect width="640" height="400" fill="${color}"/>
-      <text x="320" y="190" font-family="Arial" font-size="34" font-weight="bold" text-anchor="middle" fill="#fff">${titulo}</text>
-      <text x="320" y="232" font-family="Arial" font-size="20" text-anchor="middle" fill="#fff" opacity=".85">Imagen de demostración</text>
-      <rect y="360" width="640" height="40" fill="rgba(0,0,0,0.5)"/>
-      <text x="12" y="386" font-family="Arial" font-size="18" fill="#fff">${textoSello}</text></svg>`;
-    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  }
-
-  function mount(root, opciones) {
-    opciones = opciones || {};
+  // HU-33 Registrar una faena y HU-35 Indicar insumos de la faena
+  function faenas(root) {
+    let editando = null;
     root.innerHTML = `
-      <div class="camera">
-        <div class="camera-frame">
-          <div class="camera-vacio">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
-            <p>La vista de la cámara aparecerá aquí</p>
+      <div class="card"><h2 id="fTitle">Registrar una faena</h2>
+        <form id="ff" novalidate>
+          <div class="form-grid">
+            <div class="form-group"><label for="fPlace">Lugar *</label><input id="fPlace" type="text" maxlength="80" aria-describedby="ePlace"><p class="field-error" id="ePlace" role="alert"></p></div>
+            <div class="form-group"><label for="fDate">Fecha *</label><input id="fDate" type="date" aria-describedby="eDate"><p class="field-error" id="eDate" role="alert"></p></div>
+            <div class="form-group"><label for="fTime">Hora *</label><input id="fTime" type="time" aria-describedby="eTime"><p class="field-error" id="eTime" role="alert"></p></div>
           </div>
-          <video class="camera-video" autoplay playsinline muted hidden aria-label="Vista previa de la cámara"></video>
-          <img class="camera-result" alt="Foto capturada con fecha, hora y ubicación" hidden>
-          <div class="camera-flash" aria-hidden="true"></div>
-          <div class="camera-proceso" aria-hidden="true"><span class="camera-puntos"><i></i><i></i><i></i></span>Procesando foto</div>
-        </div>
-        <p class="camera-msg text-muted" role="status"></p>
-        <div class="camera-actions">
-          <button type="button" class="btn btn-secondary" data-cam="open">Abrir cámara</button>
-          <button type="button" class="btn btn-primary" data-cam="shoot" hidden>Tomar foto</button>
-          <button type="button" class="btn btn-secondary" data-cam="retake" hidden>Repetir foto</button>
-          <button type="button" class="btn btn-ghost" data-cam="demo" hidden>Usar foto de prueba</button>
-        </div>
-      </div>`;
+          <div class="form-group"><label for="fDesc">Descripción *</label><textarea id="fDesc" rows="2" maxlength="200" aria-describedby="eDesc"></textarea><p class="field-error" id="eDesc" role="alert"></p></div>
+          <div class="form-group checkbox-group"><input type="checkbox" id="fImpl"><label for="fImpl">La junta garantiza guantes y bolsas</label></div>
+          <div class="form-grid">
+            <div class="form-group"><label for="fInsJ">Insumos que aporta la junta</label><textarea id="fInsJ" rows="2" maxlength="150"></textarea></div>
+            <div class="form-group"><label for="fInsV">Insumos que deben traer los vecinos</label><textarea id="fInsV" rows="2" maxlength="150"></textarea></div>
+          </div>
+          <p class="text-muted" id="insNote"></p>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit" id="fSave">Registrar faena</button>
+            <button class="btn btn-secondary" type="button" id="fCancelEdit" hidden>Cancelar edición</button>
+          </div>
+        </form>
+      </div>
+      <div class="card"><h2>Faenas de mi junta</h2><div id="fl" aria-live="polite"></div></div>`;
 
-    const marco = root.querySelector('.camera-frame');
-    const vacio = root.querySelector('.camera-vacio');
-    const video = root.querySelector('.camera-video');
-    const img = root.querySelector('.camera-result');
-    const msg = root.querySelector('.camera-msg');
-    const btnAbrir = root.querySelector('[data-cam=open]');
-    const btnTomar = root.querySelector('[data-cam=shoot]');
-    const btnRepetir = root.querySelector('[data-cam=retake]');
-    const btnPrueba = root.querySelector('[data-cam=demo]');
-    let stream = null;
-    let foto = null;
-    let espera = null;
+    const $ = selector => root.querySelector(selector);
+    $('#fDate').min = U.todayISO();
 
-    function detener() {
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-        const i = activos.indexOf(stream);
-        if (i >= 0) activos.splice(i, 1);
-        stream = null;
-      }
-      video.srcObject = null;
+    function limpiarFormulario() {
+      editando = null;
+      $('#ff').reset();
+      $('#fTitle').textContent = 'Registrar una faena';
+      $('#fSave').textContent = 'Registrar faena';
+      $('#fCancelEdit').hidden = true;
+      $('#fInsJ').disabled = false;
+      $('#fInsV').disabled = false;
+      $('#insNote').textContent = '';
+      ['ePlace', 'eDate', 'eTime', 'eDesc'].forEach(id => setError(root, id, ''));
     }
 
-    function botones(abrir, tomar, repetir, prueba) {
-      btnAbrir.hidden = !abrir;
-      btnTomar.hidden = !tomar;
-      btnRepetir.hidden = !repetir;
-      btnPrueba.hidden = !prueba;
+    function editar(f) {
+      editando = f.id;
+      $('#fTitle').textContent = 'Editar faena ' + f.id;
+      $('#fSave').textContent = 'Guardar cambios';
+      $('#fCancelEdit').hidden = false;
+      $('#fPlace').value = f.place;
+      $('#fDate').value = f.date;
+      $('#fTime').value = f.time;
+      $('#fDesc').value = f.desc;
+      $('#fImpl').checked = f.implementos;
+      $('#fInsJ').value = f.insumosJunta;
+      $('#fInsV').value = f.insumosVecinos;
+      const bloqueado = f.date <= U.todayISO();
+      $('#fInsJ').disabled = bloqueado;
+      $('#fInsV').disabled = bloqueado;
+      $('#insNote').textContent = bloqueado ? 'La lista de insumos solo puede actualizarse hasta el día anterior a la faena.' : '';
+      $('#ff').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#fPlace').focus();
     }
 
-    function mostrarFoto(nueva) {
-      clearTimeout(espera);
-      img.src = nueva.dataUrl;
-      img.hidden = false;
-      vacio.hidden = true;
-      botones(false, false, false, false);
-      marco.classList.remove('disparo', 'procesando', 'revelado');
-      void marco.offsetWidth;
+    $('#ff').addEventListener('submit', e => {
+      e.preventDefault();
+      const datos = {
+        place: $('#fPlace').value.trim(),
+        date: $('#fDate').value,
+        time: $('#fTime').value,
+        desc: $('#fDesc').value.trim()
+      };
 
-      if (sinMovimiento()) {
-        video.hidden = true;
-        terminar();
+      let errorFecha = '';
+      if (!datos.date) errorFecha = 'Indica la fecha.';
+      else if (datos.date < U.todayISO()) errorFecha = 'La fecha no puede ser anterior a hoy.';
+
+      let errorHora = '';
+      if (!datos.time) errorHora = 'Indica la hora.';
+      else if (datos.date && U.startOf({ date: datos.date, time: datos.time }) < Date.now()) errorHora = 'Esa hora ya pasó.';
+
+      let ok = true;
+      ok = setError(root, 'ePlace', datos.place ? '' : 'Indica el lugar de la faena.') && ok;
+      ok = setError(root, 'eDate', errorFecha) && ok;
+      ok = setError(root, 'eTime', errorHora) && ok;
+      ok = setError(root, 'eDesc', datos.desc ? '' : 'Agrega una breve descripción.') && ok;
+      if (!ok) {
+        EV.ui.toast('Revisa los campos marcados.', 'error');
         return;
       }
 
-      marco.classList.add('disparo', 'procesando');
-      msg.textContent = 'Procesando foto...';
-      espera = setTimeout(() => {
-        video.hidden = true;
-        marco.classList.remove('procesando');
-        marco.classList.add('revelado');
-        espera = setTimeout(terminar, 450);
-      }, 650);
-
-      function terminar() {
-        marco.classList.remove('disparo');
-        foto = nueva;
-        botones(false, false, true, false);
-        if (nueva.source === 'demo') msg.textContent = 'Foto de prueba registrada (no es una foto real).';
-        else msg.textContent = 'Foto capturada. Puedes repetirla si no se ve bien.';
-        if (opciones.onChange) opciones.onChange(nueva);
+      if (editando) {
+        const f = S.s.faenas.find(x => x.id === editando);
+        Object.assign(f, datos, { implementos: $('#fImpl').checked });
+        if (!$('#fInsJ').disabled) {
+          f.insumosJunta = $('#fInsJ').value.trim();
+          f.insumosVecinos = $('#fInsV').value.trim();
+        }
+        if (f.inscritos.some(i => i.id === S.USER)) {
+          S.notify('vecino', 'La faena en ' + f.place + ' fue actualizada. Revisa los detalles.', f.id);
+        }
+        S.save();
+        EV.ui.toast('Faena actualizada.', 'success');
+      } else {
+        const zona = S.ZONES.find(z => S.s.settings.zoneJunta[z.id] === JID) || S.ZONES[0];
+        S.s.faenas.push(Object.assign({
+          id: S.nextId('FAE', 'fae'), organizer: 'junta', organizerName: junta().name, juntaId: JID, zone: zona.id, lat: zona.lat, lng: zona.lng
+        }, datos, {
+          implementos: $('#fImpl').checked, insumosJunta: $('#fInsJ').value.trim(), insumosVecinos: $('#fInsV').value.trim(),
+          cancelled: false, invited: 0, attendanceSaved: false, inscritos: []
+        }));
+        S.save();
+        EV.ui.toast('Faena registrada. Ya es visible para los vecinos de la zona.', 'success');
       }
-    }
+      limpiarFormulario();
+    });
 
-    function quitarFoto() {
-      clearTimeout(espera);
-      foto = null;
-      img.hidden = true;
-      img.removeAttribute('src');
-      marco.classList.remove('disparo', 'procesando', 'revelado');
-      msg.textContent = '';
-      if (opciones.onChange) opciones.onChange(null);
-    }
+    $('#fCancelEdit').addEventListener('click', limpiarFormulario);
 
-    btnAbrir.addEventListener('click', async () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        msg.textContent = 'Este navegador no permite usar la cámara. Puedes usar una foto de prueba.';
-        btnPrueba.hidden = false;
+    function draw() {
+      const lista = S.s.faenas.filter(f => f.juntaId === JID).sort((a, b) => U.startOf(b) - U.startOf(a));
+      if (!lista.length) {
+        $('#fl').innerHTML = '<p class="empty">Aún no registraste faenas.</p>';
         return;
       }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        activos.push(stream);
-        video.srcObject = stream;
-        vacio.hidden = true;
-        video.hidden = false;
-        botones(false, true, false, false);
-        msg.textContent = 'Apunta al foco de basura y toma la foto.';
-      } catch (err) {
-        msg.textContent = 'No pudimos acceder a la cámara. Puedes usar una foto de prueba.';
-        btnPrueba.hidden = false;
+      $('#fl').innerHTML = '<ul class="item-list">' + lista.map(f => {
+        const empezo = U.startOf(f) <= Date.now();
+        const esElDia = f.date <= U.todayISO();
+        let estado = '<span class="badge badge--active">Programada</span>';
+        if (f.cancelled) estado = '<span class="badge badge--neutral">Cancelada</span>';
+        else if (empezo) estado = '<span class="badge badge--neutral">Realizada o en curso</span>';
+
+        let botones = '';
+        if (!f.cancelled && !empezo) {
+          botones += `<button class="btn btn-secondary btn-sm" data-edit="${f.id}">Editar</button>
+            <button class="btn btn-secondary btn-sm" data-invite="${f.id}">${f.invited ? 'Reenviar invitación' : 'Invitar a vecinos'}</button>
+            <button class="btn btn-ghost btn-sm" data-cancel="${f.id}">Cancelar faena</button>`;
+        }
+        if (!f.cancelled && esElDia) {
+          botones += `<button class="btn btn-primary btn-sm" data-att="${f.id}">${f.attendanceSaved ? 'Ver asistencia' : 'Registrar asistencia'}</button>`;
+        }
+
+        return `<li class="item item--col">
+          <div><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)} ${estado}<br>
+            <span class="text-muted">${esc(f.desc)}</span><br>
+            <span class="text-muted">Inscritos: ${f.inscritos.length}${f.invited ? ' de ' + f.invited + ' invitados' : ''}. Junta aporta: ${esc(f.insumosJunta || '-')}. Vecinos traen: ${esc(f.insumosVecinos || '-')}</span>
+          </div>
+          <div class="form-actions">${botones}</div>
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const buscar = id => S.s.faenas.find(x => x.id === id);
+
+      if (b.dataset.edit) editar(buscar(b.dataset.edit));
+
+      if (b.dataset.cancel) {
+        const f = buscar(b.dataset.cancel);
+        EV.ui.confirmar('¿Cancelar la faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + '? Se avisará a los inscritos.', 'Sí, cancelar faena', () => {
+          f.cancelled = true;
+          if (f.inscritos.some(i => i.id === S.USER)) {
+            S.notify('vecino', 'La faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + ' fue cancelada.', f.id);
+          }
+          S.save();
+          EV.ui.toast('Faena cancelada.', 'info');
+        });
       }
-    });
 
-    btnTomar.addEventListener('click', () => {
-      if (!video.videoWidth) {
-        msg.textContent = 'La cámara aún está iniciando. Intenta de nuevo.';
-        return;
+      // HU-34 Invitar vecinos a una faena
+      if (b.dataset.invite) {
+        const f = buscar(b.dataset.invite);
+        f.invited = 40;
+        S.notify('vecino', f.organizerName + ' te invita a la faena del ' + U.fmtDate(U.startOf(f)) + ' (' + f.time + ') en ' + f.place + '.', f.id);
+        S.save();
+        EV.ui.toast('Invitación enviada a los 40 vecinos registrados de tu zona.', 'success');
       }
-      const escala = Math.min(1, 640 / video.videoWidth);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(video.videoWidth * escala);
-      canvas.height = Math.round(video.videoHeight * escala);
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'rgba(0,0,0,.6)';
-      ctx.fillRect(0, canvas.height - 30, canvas.width, 30);
-      ctx.fillStyle = '#fff';
-      ctx.font = '15px Arial';
-      ctx.fillText(sello(), 10, canvas.height - 10);
-      const g = EV.geo.get();
-      detener();
-      mostrarFoto({ dataUrl: canvas.toDataURL('image/jpeg', 0.6), ts: Date.now(), lat: g.lat, lng: g.lng, source: 'camera' });
+
+      if (b.dataset.att) asistencia(buscar(b.dataset.att));
     });
 
-    btnRepetir.addEventListener('click', () => {
-      quitarFoto();
-      vacio.hidden = false;
-      botones(true, false, false, false);
-      btnAbrir.click();
-    });
+    // HU-36 Registrar asistencia a la faena
+    function asistencia(f) {
+      const body = EV.ui.openDialog('Asistencia - ' + f.place, '');
+      function d() {
+        if (!f.inscritos.length) {
+          body.innerHTML = '<p class="empty">Nadie se inscribió a esta faena.</p>';
+          return;
+        }
+        const lista = f.inscritos.map((i, k) => `<li class="checkbox-group">
+          <input type="checkbox" id="a${k}" ${i.attended ? 'checked' : ''} ${f.attendanceSaved ? 'disabled' : ''}>
+          <label for="a${k}">${esc(i.name)}</label>
+        </li>`).join('');
+        let pie = '<button class="btn btn-primary" type="submit">Guardar asistencia</button>';
+        if (f.attendanceSaved) {
+          const asistieron = f.inscritos.filter(i => i.attended).length;
+          pie = `<p class="status-text">Asistencia registrada: ${asistieron} de ${f.inscritos.length}. Puntos otorgados: ${PUNTOS_POR_FAENA} por asistente.</p>`;
+        }
+        body.innerHTML = `<form id="af"><ul class="plain-list">${lista}</ul>${pie}</form>`;
 
-    btnPrueba.addEventListener('click', () => {
-      const g = EV.geo.get();
-      mostrarFoto({ dataUrl: placeholder('FOTO DE PRUEBA', '#5b6b5f', sello()), ts: Date.now(), lat: g.lat, lng: g.lng, source: 'demo' });
-    });
-
-    return {
-      getPhoto: () => foto,
-      reset: () => {
-        detener();
-        quitarFoto();
-        video.hidden = true;
-        vacio.hidden = false;
-        botones(true, false, false, false);
-      },
-      destroy: () => {
-        clearTimeout(espera);
-        detener();
+        const form = body.querySelector('#af');
+        if (!f.attendanceSaved) {
+          form.addEventListener('submit', e => {
+            e.preventDefault();
+            f.inscritos.forEach((i, k) => {
+              i.attended = body.querySelector('#a' + k).checked;
+              if (i.attended && i.id === S.USER) {
+                S.s.settings.points[S.USER] = (S.s.settings.points[S.USER] || 0) + PUNTOS_POR_FAENA;
+                S.notify('vecino', 'Gracias por participar. Recibiste ' + PUNTOS_POR_FAENA + ' puntos.', f.id);
+              }
+            });
+            f.attendanceSaved = true;
+            S.save();
+            EV.ui.toast('Asistencia guardada en el historial de la faena.', 'success');
+            d();
+          });
+        }
       }
-    };
+      d();
+    }
+
+    draw();
+    return { refresh: draw };
   }
 
-  return { mount, stopAll, placeholder };
+  // HU-38 Subir evidencia con fecha y hora, HU-39 Reportar sin identificar al vecino y HU-40 Seguir protocolo por fases
+  function evidencia(root) {
+    let foto = null;
+    root.innerHTML = `
+      <div class="card"><h2>Registrar evidencia sin confrontar</h2>
+        <p class="text-muted">Toma una foto del punto donde se arroja basura. La app registra fecha, hora y ubicación. <strong>No escribas nombres ni datos de personas:</strong> el caso registra solo el punto geográfico y es visible únicamente para tu junta y el personal municipal.</p>
+        <div id="evCam"></div>
+        <form id="evf" class="form-group" novalidate>
+          <label for="evDesc">Breve descripción del punto *</label>
+          <textarea id="evDesc" rows="2" maxlength="200" aria-describedby="eEv"></textarea>
+          <p class="field-error" id="eEv" role="alert"></p>
+          <button class="btn btn-primary" type="submit">Guardar evidencia y abrir caso</button>
+        </form>
+      </div>
+      <div class="card"><h2>Casos del protocolo por fases</h2><div id="cases" aria-live="polite"></div></div>`;
+
+    const cam = EV.camera.mount(root.querySelector('#evCam'), { onChange: p => { foto = p; } });
+
+    root.querySelector('#evf').addEventListener('submit', e => {
+      e.preventDefault();
+      const desc = root.querySelector('#evDesc').value.trim();
+      if (!foto) {
+        EV.ui.toast('Primero toma la foto de evidencia.', 'error');
+        return;
+      }
+      if (!setError(root, 'eEv', desc ? '' : 'Agrega una breve descripción del punto.')) return;
+      const zona = S.ZONES.find(z => S.s.settings.zoneJunta[z.id] === JID) || S.ZONES[0];
+      S.s.casos.push({
+        id: S.nextId('CAS', 'cas'), juntaId: JID, zone: zona.id, createdAt: Date.now(), desc: desc, phase: 0,
+        evidence: [{ photo: foto, desc: desc }], actions: [], escalated: false, reportId: null
+      });
+      if (S.save()) {
+        EV.ui.toast('Caso abierto en la fase de sensibilización.', 'success');
+        cam.reset();
+        foto = null;
+        root.querySelector('#evDesc').value = '';
+      }
+    });
+
+    function draw() {
+      const lista = S.s.casos.filter(c => c.juntaId === JID).sort((a, b) => b.createdAt - a.createdAt);
+      if (!lista.length) {
+        root.querySelector('#cases').innerHTML = '<p class="empty">No hay casos abiertos.</p>';
+        return;
+      }
+      root.querySelector('#cases').innerHTML = '<ul class="item-list">' + lista.map(c => {
+        const acciones = c.actions.filter(a => a.phase === c.phase).length;
+        const ultima = c.phase === S.FASES.length - 1;
+
+        const fases = S.FASES.map((nombre, i) => {
+          const actual = i === c.phase && !c.escalated ? 'aria-current="step"' : '';
+          const hecha = i < c.phase || c.escalated ? 'done' : '';
+          return `<li ${actual} class="${hecha}">${i + 1}. ${nombre}</li>`;
+        }).join('');
+
+        let historial = '';
+        if (c.actions.length) {
+          historial = '<ul class="plain-list">' + c.actions.map(a =>
+            `<li><strong>${S.FASES[a.phase]}:</strong> ${esc(a.text)} <span class="text-muted">(${U.fmtDate(a.ts)})</span></li>`
+          ).join('') + '</ul>';
+        }
+
+        let controles = `<p class="status-text">Caso escalado al municipio como ${esc(c.reportId)}.</p>`;
+        if (!c.escalated) {
+          let boton;
+          if (ultima) {
+            boton = `<button class="btn btn-primary" data-esc="${c.id}">Escalar al municipio</button>`;
+          } else if (acciones) {
+            boton = `<button class="btn btn-primary" data-next="${c.id}">Avanzar a "${S.FASES[c.phase + 1]}"</button>`;
+          } else {
+            boton = `<button class="btn btn-primary" data-next="${c.id}" disabled aria-describedby="hint-${c.id}">Avanzar a "${S.FASES[c.phase + 1]}"</button>
+              <span class="text-muted" id="hint-${c.id}">Registra al menos una acción de esta fase para avanzar.</span>`;
+          }
+          controles = `<form data-act="${c.id}" class="form-row">
+              <label for="act-${c.id}">Acción realizada en la fase "${S.FASES[c.phase]}"</label>
+              <input id="act-${c.id}" type="text" maxlength="120">
+              <button class="btn btn-secondary btn-sm" type="submit">Registrar acción</button>
+            </form>
+            <div class="form-actions">${boton}
+              ${ultima ? '' : '<span class="text-muted">El caso solo puede escalarse desde la fase final.</span>'}
+            </div>`;
+        }
+
+        return `<li class="item item--col">
+          <div class="feed-header"><strong>${esc(c.id)}</strong><span class="text-muted">${U.fmtDate(c.createdAt)} - ${esc(S.zoneById(c.zone).name)}</span></div>
+          <div class="evidence">${c.evidence.map(ev => `<figure><img class="thumb thumb--lg" src="${ev.photo.dataUrl}" alt="Evidencia fotográfica del caso ${esc(c.id)}"><figcaption>${esc(ev.desc)}</figcaption></figure>`).join('')}</div>
+          <ol class="phases" aria-label="Fases del protocolo">${fases}</ol>
+          ${historial}
+          ${controles}
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    root.addEventListener('submit', e => {
+      const form = e.target.closest('form[data-act]');
+      if (!form) return;
+      e.preventDefault();
+      const c = S.s.casos.find(x => x.id === form.dataset.act);
+      const input = form.querySelector('input');
+      const texto = input.value.trim();
+      if (!texto) {
+        EV.ui.toast('Describe la acción realizada.', 'error');
+        input.focus();
+        return;
+      }
+      c.actions.push({ phase: c.phase, text: texto, ts: Date.now() });
+      S.save();
+      EV.ui.toast('Acción registrada.', 'success');
+    });
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.next) {
+        const c = S.s.casos.find(x => x.id === b.dataset.next);
+        if (!c.actions.some(a => a.phase === c.phase)) {
+          EV.ui.toast('Registra al menos una acción de la fase actual.', 'error');
+          return;
+        }
+        c.phase++;
+        S.save();
+        EV.ui.toast('Avanzaste a "' + S.FASES[c.phase] + '".', 'success');
+      }
+      if (b.dataset.esc) {
+        const c = S.s.casos.find(x => x.id === b.dataset.esc);
+        if (c.phase !== S.FASES.length - 1) return;
+        const ev = c.evidence[0];
+        const zona = S.zoneById(c.zone);
+        const r = {
+          id: S.nextId('REP', 'rep'), createdAt: Date.now(), zone: c.zone, lat: ev.photo.lat, lng: ev.photo.lng, tipo: null, tamano: null,
+          reserved: false, reporterId: 'junta-' + JID, source: 'junta', status: 'pending', photo: ev.photo, supporters: [], thread: [],
+          after: null, override: null, closedAt: null, closedBy: null
+        };
+        S.s.reports.push(r);
+        c.escalated = true;
+        c.reportId = r.id;
+        S.notify('municipal', 'La ' + junta().name + ' escaló el caso ' + c.id + ' como reporte ' + r.id + ' (' + zona.name + ').', r.id);
+        S.save();
+        EV.ui.toast('Caso escalado al municipio como ' + r.id + '.', 'success');
+      }
+    });
+
+    draw();
+    return { refresh: draw, destroy: () => cam.destroy() };
+  }
+
+  // HU-29 Compartir estado con la junta y HU-31 Responder un reporte derivado
+  function zona(root) {
+    root.innerHTML = `<div class="card"><h2>Estado de los reportes de mi zona</h2>
+      <p class="notice notice--soft" id="zInfo"></p>
+      <div id="zl" aria-live="polite"></div>
+    </div>`;
+
+    function draw() {
+      const zonas = S.ZONES.filter(z => S.s.settings.zoneJunta[z.id] === JID);
+      if (zonas.length) {
+        root.querySelector('#zInfo').textContent = junta().name + '. Zonas: ' + zonas.map(z => z.name).join(', ') +
+          '. Vista de solo lectura: los datos municipales no se pueden editar. Los cambios se reflejan en tiempo real.';
+      } else {
+        root.querySelector('#zInfo').textContent = 'Tu junta aún no está vinculada a una zona. La municipalidad debe vincularla.';
+      }
+
+      const lista = S.reportsOfJunta(JID).sort((a, b) => b.createdAt - a.createdAt);
+      if (!lista.length) {
+        root.querySelector('#zl').innerHTML = '<p class="empty">No hay reportes en tu zona.</p>';
+        return;
+      }
+      root.querySelector('#zl').innerHTML = '<ul class="item-list">' + lista.map(r => `<li class="item">
+        <img class="thumb" src="${r.photo.dataUrl}" alt="Foto del reporte ${esc(r.id)}">
+        <div class="item-main"><strong>${esc(r.id)}</strong> ${EV.ui.badge(r.status)}<br>
+          <span class="text-muted">${U.fmtDateTime(r.createdAt)} - ${esc(S.zoneById(r.zone).name)} - ${r.thread.length} comentario(s)</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" data-thread="${r.id}">Comentarios</button>
+      </li>`).join('') + '</ul>';
+    }
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('[data-thread]');
+      if (b) abrirComentarios(b.dataset.thread);
+    });
+    draw();
+    return { refresh: draw };
+  }
+
+  function abrirComentarios(id) {
+    const body = EV.ui.openDialog('Comentarios - ' + id, '');
+    function d() {
+      const r = S.s.reports.find(x => x.id === id);
+      let hilo = '<p class="text-muted">Sin comentarios todavía.</p>';
+      if (r.thread.length) {
+        hilo = '<ul class="thread">' + r.thread.map(m =>
+          `<li class="msg msg--${m.from}"><strong>${FROM[m.from] || m.from}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`
+        ).join('') + '</ul>';
+      }
+      body.innerHTML = `<p>${EV.ui.badge(r.status)}</p>${hilo}
+        <form id="tf" class="form-group">
+          <label for="tt">Responder a la municipalidad</label>
+          <textarea id="tt" rows="2" maxlength="280" required></textarea>
+          <button class="btn btn-primary" type="submit">Enviar</button>
+        </form>`;
+      body.querySelector('#tf').addEventListener('submit', e => {
+        e.preventDefault();
+        const texto = body.querySelector('#tt').value.trim();
+        if (!texto) return;
+        S.addMessage(r.thread, 'dirigente', texto);
+        S.notify('municipal', 'La junta comentó en el reporte ' + r.id + '.', r.id);
+        S.save();
+        EV.ui.toast('Comentario enviado.', 'success');
+      });
+    }
+    EV.ui.currentDetail = d;
+    d();
+  }
+
+  // HU-43 Ver estado de solicitudes y HU-44 Notificar solicitud sin respuesta
+  function solicitudes(root) {
+    const tipos = Object.keys(S.SOL_TIPOS);
+    root.innerHTML = `
+      <div class="card"><h2>Nueva solicitud al municipio</h2>
+        <form id="sf" novalidate>
+          <div class="form-grid">
+            <div class="form-group"><label for="sTipo">Tipo</label>
+              <select id="sTipo">${tipos.map(k => `<option value="${k}">${S.SOL_TIPOS[k]}</option>`).join('')}</select></div>
+            <div class="form-group"><label for="sAsunto">Asunto *</label>
+              <input id="sAsunto" type="text" maxlength="100" aria-describedby="eAs"><p class="field-error" id="eAs" role="alert"></p></div>
+          </div>
+          <div class="form-group"><label for="sMsg">Mensaje</label><textarea id="sMsg" rows="2" maxlength="280"></textarea></div>
+          <button class="btn btn-primary" type="submit">Enviar solicitud</button>
+        </form>
+      </div>
+      <div class="card"><h2>Tiempo límite de respuesta</h2>
+        <p class="text-muted">Si una solicitud supera este tiempo sin respuesta, recibirás una notificación de seguimiento.</p>
+        <form id="lf" class="form-grid">
+          ${tipos.map(k => `<div class="form-group"><label for="lim-${k}">${S.SOL_TIPOS[k]} (horas)</label><input id="lim-${k}" type="number" min="1" max="720" value="${S.s.settings.requestHours[k]}"></div>`).join('')}
+          <div class="form-group"><button class="btn btn-secondary" type="submit">Guardar tiempos</button></div>
+        </form>
+      </div>
+      <div class="card"><h2>Mis solicitudes</h2><div id="sl" aria-live="polite"></div></div>`;
+
+    root.querySelector('#sf').addEventListener('submit', e => {
+      e.preventDefault();
+      const asunto = root.querySelector('#sAsunto').value.trim();
+      const mensaje = root.querySelector('#sMsg').value.trim();
+      if (!setError(root, 'eAs', asunto ? '' : 'Indica el asunto de la solicitud.')) return;
+      const s = {
+        id: S.nextId('SOL', 'sol'), juntaId: JID, tipo: root.querySelector('#sTipo').value, asunto: asunto,
+        createdAt: Date.now(), status: 'enviada', lastChange: Date.now(), zone: 'z1', reminders: 0, thread: []
+      };
+      if (mensaje) S.addMessage(s.thread, 'dirigente', mensaje);
+      S.s.solicitudes.push(s);
+      S.notify('municipal', 'Nueva solicitud ' + s.id + ' de la ' + junta().name + ': ' + asunto + '.', s.id);
+      S.save();
+      EV.ui.toast('Solicitud ' + s.id + ' enviada.', 'success');
+      e.target.reset();
+    });
+
+    root.querySelector('#lf').addEventListener('submit', e => {
+      e.preventDefault();
+      tipos.forEach(k => {
+        const valor = Number(root.querySelector('#lim-' + k).value);
+        if (valor >= 1) S.s.settings.requestHours[k] = valor;
+      });
+      checkAlerts();
+      EV.ui.toast('Tiempos guardados.', 'success');
+    });
+
+    function draw() {
+      const lista = S.s.solicitudes.filter(s => s.juntaId === JID).sort((a, b) => b.createdAt - a.createdAt);
+      if (!lista.length) {
+        root.querySelector('#sl').innerHTML = '<p class="empty">No has enviado solicitudes.</p>';
+        return;
+      }
+      root.querySelector('#sl').innerHTML = '<ul class="item-list">' + lista.map(s => {
+        const vencida = S.overdueSolicitud(s);
+        return `<li class="item item--col">
+          <div class="feed-header"><div><strong>${esc(s.id)}</strong> - ${esc(s.asunto)}</div><span class="badge badge--sol-${s.status}">${S.SOL_ESTADOS[s.status]}</span></div>
+          <span class="text-muted">${esc(S.SOL_TIPOS[s.tipo])}. Enviada: ${U.fmtDate(s.createdAt)}. Último cambio de estado: ${U.fmtDateTime(s.lastChange)}</span>
+          ${vencida ? `<p class="notice notice--warn">Sin respuesta hace ${Math.round(U.hoursSince(s.lastChange))} h (límite: ${S.s.settings.requestHours[s.tipo]} h).</p>` : ''}
+          <div class="form-actions">
+            <button class="btn btn-secondary btn-sm" data-sol="${s.id}">Ver hilo (${s.thread.length})</button>
+            ${vencida ? `<button class="btn btn-primary btn-sm" data-remind="${s.id}">Reenviar recordatorio</button>` : ''}
+          </div>
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.sol) abrirHilo(b.dataset.sol);
+      if (b.dataset.remind) remind(b.dataset.remind);
+    });
+
+    draw();
+    return { refresh: draw };
+  }
+
+  function remind(id) {
+    const s = S.s.solicitudes.find(x => x.id === id);
+    S.addMessage(s.thread, 'dirigente', 'Recordatorio: seguimos esperando respuesta a esta solicitud.');
+    s.reminders++;
+    S.notify('municipal', 'Recordatorio de la ' + junta().name + ' sobre la solicitud ' + s.id + '.', s.id);
+    S.save();
+    EV.ui.toast('Recordatorio enviado al municipio.', 'success');
+  }
+
+  // HU-47 Responder dentro del hilo
+  function abrirHilo(id) {
+    const body = EV.ui.openDialog('Solicitud ' + id, '');
+    function d() {
+      const s = S.s.solicitudes.find(x => x.id === id);
+      const mensajes = s.thread.slice().sort((a, b) => a.ts - b.ts);
+      let hilo = '<p class="text-muted">Sin mensajes.</p>';
+      if (mensajes.length) {
+        hilo = '<ul class="thread">' + mensajes.map(m =>
+          `<li class="msg msg--${m.from}"><strong>${FROM[m.from]}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`
+        ).join('') + '</ul>';
+      }
+      body.innerHTML = `<p><span class="badge badge--sol-${s.status}">${S.SOL_ESTADOS[s.status]}</span> <span class="text-muted">Último cambio: ${U.fmtDateTime(s.lastChange)}</span></p>
+        <h3>${esc(s.asunto)}</h3>${hilo}
+        <form id="sm" class="form-group">
+          <label for="smt">Escribir en el hilo</label>
+          <textarea id="smt" rows="2" maxlength="280" required></textarea>
+          <button class="btn btn-primary" type="submit">Enviar</button>
+        </form>`;
+      body.querySelector('#sm').addEventListener('submit', e => {
+        e.preventDefault();
+        const texto = body.querySelector('#smt').value.trim();
+        if (!texto) return;
+        S.addMessage(s.thread, 'dirigente', texto);
+        S.notify('municipal', 'Nuevo mensaje de la junta en la solicitud ' + s.id + '.', s.id);
+        S.save();
+      });
+    }
+    EV.ui.currentDetail = d;
+    d();
+  }
+
+  return {
+    checkAlerts: checkAlerts,
+    remind: remind,
+    tabs: [
+      { id: 'faenas', icon: '../assets/faena.svg', label: 'Faenas', render: faenas },
+      { id: 'evidencia', icon: '../assets/camara.svg', label: 'Casos', render: evidencia },
+      { id: 'zona', icon: '../assets/cercaMio.svg', label: 'Mi zona', render: zona },
+      { id: 'solicitudes', icon: '../assets/solicitud.svg', label: 'Solicitudes', render: solicitudes }
+    ]
+  };
 })();
