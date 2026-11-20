@@ -1,245 +1,601 @@
-/* EcoVecinos · municipal.js — Vistas del personal municipal
-   HU-17 Panel · HU-18 Filtros · HU-20 Atrasados · HU-21 Prioridad · HU-22 Agrupar
-   HU-25 Foto «después» · HU-26 Comparar · HU-27 Resolver · HU-29 Zona↔junta
-   HU-31 Responder · HU-43/47 Estado y respuesta de solicitudes */
 EV.views.municipal = (function () {
-  const S = EV.store, U = EV.util, esc = U.esc, ico = EV.ui.icon;
-  const WHO = 'Personal municipal (demo)';
+  const S = EV.store;
+  const U = EV.util;
+  const esc = U.esc;
+  const QUIEN = 'Personal municipal (demo)';
   const FROM = { vecino: 'Vecino', municipal: 'Tú (municipalidad)', dirigente: 'Junta vecinal' };
-  const PRI_CLASS = { Alta: 'badge--delayed', Media: 'badge--pending', Baja: 'badge--resolved' };
-  const DEFAULT_FILTERS = { zona: 'all', desde: '', hasta: '', estado: 'all', orden: 'prioridad' };
 
-  /* Al ingresar como municipal: alerta de reportes atrasados (HU-20). */
+  // HU-20 Alertar reporte atrasado al ingresar
   function checkAlerts() {
-    let n = 0;
-    S.s.reports.forEach(r => { if (S.isOverdue(r) && !r.overdueNotified) { r.overdueNotified = true; n++; } });
-    if (n) { S.notify('municipal', `⏰ ${n} reporte(s) superaron el tiempo límite sin atenderse. Revisa el panel.`); S.save(); }
+    const atrasados = S.s.reports.filter(r => S.isOverdue(r));
+    S.quitarAvisos('atrasados');
+    if (atrasados.length) {
+      S.notify('municipal', atrasados.length + ' reporte(s) superaron el tiempo límite sin atenderse. Revisa el panel.', null, null, 'atrasados');
+    }
+    S.save();
   }
 
-  const priorityBadge = (r, p) => `<span class="badge ${PRI_CLASS[p.eff]}">Prioridad ${p.eff}${r.override ? ' (manual)' : ` · ${p.score}/100`}</span>`;
-  const overdueBadge = r => S.isOverdue(r) ? ` <span class="badge badge--delayed">${ico('⏰')} Atrasado</span>` : '';
-
-  /* ---------- Detalle de un reporte (HU-21, 22, 25, 26, 27, 31) ---------- */
   function openReport(id) {
     const r0 = S.s.reports.find(x => x.id === id);
-    if (!r0) return;
-    const body = EV.ui.openDialog(`Reporte ${r0.id}`, '');
-    let cam = null, afterPhoto = null;
+    const body = EV.ui.openDialog('Reporte ' + r0.id, '');
+    let cam = null;
+    let fotoDespues = null;
+    const abiertos = { evidencia: true, prioridad: false, grupo: true, comentarios: false };
+
+    function seccion(clave, titulo, contenido) {
+      return `<details class="seccion" data-sec="${clave}" ${abiertos[clave] ? 'open' : ''}>
+        <summary>${titulo}</summary>
+        <div class="seccion-body">${contenido}</div>
+      </details>`;
+    }
 
     function draw() {
       const r = S.s.reports.find(x => x.id === id);
-      if (!r) return;
-      const p = S.priority(r), g = S.clusters()[r.id], z = S.zoneById(r.zone), j = S.juntaOfZone(r.zone);
-      const af = r.after, canClose = r.status !== 'resolved' && af && af.status === 'approved';
-      const needAfter = r.status !== 'resolved' && (!af || af.status === 'rejected');
+      const p = S.priority(r);
+      const grupo = S.clusters()[r.id];
+      const zona = S.zoneById(r.zone);
+      const junta = S.juntaOfZone(r.zone);
+      const despues = r.after;
+      const puedeCerrar = r.status !== 'resolved' && despues && despues.status === 'approved';
+      const faltaFoto = r.status !== 'resolved' && (!despues || despues.status === 'rejected');
+
+      let origen = 'Vecino registrado';
+      if (r.source === 'junta') origen = 'Escalado por una junta';
+      else if (r.reserved) origen = 'Vecino (identidad reservada)';
+
+      let fotoDespuesHtml = '<div class="placeholder-box">Aún no hay foto de "después".</div>';
+      if (despues) {
+        let estadoFoto = 'Por validar';
+        if (despues.status === 'approved') estadoFoto = 'Aprobada';
+        if (despues.status === 'rejected') estadoFoto = 'Rechazada';
+        fotoDespuesHtml = `<figure><img src="${despues.photo.dataUrl}" alt="Foto de después"><figcaption>Después - ${U.fmtDateTime(despues.photo.ts)} - ${estadoFoto}</figcaption></figure>`;
+      }
+
+      let grupoHtml = '';
+      if ((grupo && grupo.members.length > 1) || r.supporters.length) {
+        const personas = grupo ? grupo.people : 1 + r.supporters.length;
+        const ids = grupo && grupo.members.length > 1 ? ' (' + grupo.members.map(m => esc(m.id)).join(', ') + ')' : '';
+        grupoHtml = seccion('grupo', 'Punto crítico agrupado', `<p><strong>${personas} vecino(s)</strong> reportaron este punto${ids}. Al resolverlo, todos los reportes asociados cambian de estado.</p>`);
+      }
+
+      let comentarios = '<p class="text-muted">Sin comentarios.</p>';
+      if (r.thread.length) {
+        comentarios = '<ul class="thread">' + r.thread.map(m =>
+          `<li class="msg msg--${m.from}"><strong>${FROM[m.from] || m.from}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`
+        ).join('') + '</ul>';
+      }
+
+      const evidencia = `
+        <div class="before-after">
+          <figure><img src="${r.photo.dataUrl}" alt="Foto de antes"><figcaption>Antes - ${U.fmtDateTime(r.photo.ts)}</figcaption></figure>
+          ${fotoDespuesHtml}
+        </div>
+        ${despues && despues.status === 'rejected' ? `<p class="notice notice--warn">Evidencia rechazada: ${esc(despues.note)}. Se solicitó una nueva foto a la cuadrilla.</p>` : ''}
+        ${despues && despues.status === 'pending' ? `<div class="form-group">
+            <label for="rejNote">Motivo (obligatorio si rechazas)</label>
+            <input id="rejNote" type="text" maxlength="120" aria-describedby="rejErr">
+            <p class="field-error" id="rejErr" role="alert"></p>
+            <div class="form-actions">
+              <button class="btn btn-primary" data-act="approve">Aprobar evidencia</button>
+              <button class="btn btn-secondary" data-act="reject">Rechazar y pedir nueva foto</button>
+            </div>
+          </div>` : ''}
+        ${faltaFoto ? `<div class="card card--inner"><h4>Cuadrilla: subir foto de "después"</h4>
+            <p class="text-muted">Solo se admite una foto tomada con la cámara en el momento, con fecha, hora y ubicación.</p>
+            <div id="aCam"></div>
+            <button class="btn btn-primary" data-act="upload" id="upBtn" disabled>Subir foto de después</button>
+          </div>` : ''}
+        <div class="form-actions">
+          <button class="btn btn-primary" data-act="resolve" ${puedeCerrar ? '' : 'disabled aria-describedby="rHint"'}>Marcar como resuelto</button>
+          ${r.status === 'pending' ? '<button class="btn btn-secondary" data-act="start">Iniciar atención</button>' : ''}
+        </div>
+        ${puedeCerrar || r.status === 'resolved' ? '' : '<p class="text-muted" id="rHint">Se habilita solo con una foto de "después" aprobada.</p>'}
+        ${r.status === 'resolved' ? `<p class="status-text">Resuelto el ${U.fmtDateTime(r.closedAt)}. Validado por ${esc(r.closedBy)}.</p>` : ''}`;
+
+      // HU-21 Ver los factores de la prioridad y ajustarla con motivo
+      const prioridad = `
+        <p class="status-text">Puntaje sugerido: ${p.score}/100 (${p.level})</p>
+        <div class="table-wrap"><table class="table">
+          <caption class="sr-only">Factores del puntaje de prioridad</caption>
+          <thead><tr><th scope="col">Factor</th><th scope="col">Puntos</th><th scope="col">Por qué</th></tr></thead>
+          <tbody>${p.factors.map(f => `<tr><th scope="row">${f.name}</th><td>${f.pts}/${f.max}</td><td>${esc(f.note)}</td></tr>`).join('')}</tbody>
+        </table></div>
+        ${r.override ? `<p class="notice notice--soft">Ajuste manual a "${r.override.level}": ${esc(r.override.reason)} <span class="text-muted">(${esc(r.override.by)}, ${U.fmtDateTime(r.override.ts)})</span>
+          <button class="btn btn-ghost btn-sm" data-act="clearov">Quitar ajuste</button></p>` : ''}
+        <form id="ovf" class="form-grid" novalidate>
+          <div class="form-group"><label for="ovl">Prioridad manual</label>
+            <select id="ovl"><option>Alta</option><option>Media</option><option>Baja</option></select></div>
+          <div class="form-group"><label for="ovr">Motivo (queda registrado) *</label>
+            <input id="ovr" type="text" maxlength="120" aria-describedby="ovErr">
+            <p class="field-error" id="ovErr" role="alert"></p></div>
+          <div class="form-group"><button class="btn btn-secondary" type="submit">Aplicar</button></div>
+        </form>`;
+
+      const conversacion = `${comentarios}
+        <form id="rf" class="form-group">
+          <label for="rt">Responder</label>
+          <textarea id="rt" rows="2" maxlength="280"></textarea>
+          <div class="form-actions"><button class="btn btn-secondary" type="submit">Enviar respuesta</button></div>
+        </form>`;
+
       body.innerHTML = `
-        <div class="badges">${EV.ui.badge(r.status)} ${priorityBadge(r, p)}${overdueBadge(r)}</div>
-        <dl class="dl"><dt>Zona</dt><dd>${esc(z.name)} → ${esc(j ? j.name : 'sin junta')}</dd><dt>Ubicación</dt><dd>${U.fmtCoords(r.lat, r.lng)}</dd>
-        <dt>Enviado</dt><dd>${U.fmtDateTime(r.createdAt)} · ${r.source === 'junta' ? 'Escalado por una junta' : r.reserved ? `Vecino (identidad reservada ${ico('🔒')})` : 'Vecino registrado'}</dd></dl>
+        <div class="badges">${EV.ui.badge(r.status)}
+          ${S.isOverdue(r) ? '<span class="badge badge--late">Atrasado</span>' : ''}
+        </div>
+        <p>${EV.ui.prioridad(p, r.override)}</p>
+        <dl class="dl">
+          <dt>Zona</dt><dd>${esc(zona.name)}, ${esc(junta ? junta.name : 'sin junta')}</dd>
+          <dt>Ubicación</dt><dd>${U.fmtCoords(r.lat, r.lng)}</dd>
+          <dt>Enviado</dt><dd>${U.fmtDateTime(r.createdAt)} - ${origen}</dd>
+        </dl>
+        ${seccion('evidencia', 'Evidencia y cierre', evidencia)}
+        ${seccion('prioridad', 'Prioridad', prioridad)}
+        ${grupoHtml}
+        ${seccion('comentarios', 'Comentarios para la junta (' + r.thread.length + ')', conversacion)}`;
 
-        <h3>Evidencia</h3>
-        <div class="before-after"><figure><img src="${r.photo.dataUrl}" alt="Foto de antes"><figcaption>Antes · ${U.fmtDateTime(r.photo.ts)}</figcaption></figure>
-        ${af ? `<figure><img src="${af.photo.dataUrl}" alt="Foto de después"><figcaption>Después · ${U.fmtDateTime(af.photo.ts)} · ${af.status === 'approved' ? `${ico('✔')} Aprobada` : af.status === 'rejected' ? `${ico('✖')} Rechazada` : 'Por validar'}</figcaption></figure>` : '<div class="placeholder-box">Aún no hay foto de «después»</div>'}</div>
-        ${af && af.status === 'rejected' ? `<p class="notice notice--warn">Evidencia rechazada: ${esc(af.note)}. Se solicitó una nueva foto a la cuadrilla.</p>` : ''}
-        ${af && af.status === 'pending' ? `<div class="form-group"><label for="rejNote">Motivo (obligatorio si rechazas)</label><input id="rejNote" type="text" maxlength="120" autocomplete="off" aria-describedby="rejErr"><p class="field-error" id="rejErr" role="alert"></p>
-          <div class="form-actions"><button type="button" class="btn btn-primary" data-act="approve">Aprobar evidencia</button><button type="button" class="btn btn-secondary" data-act="reject">Rechazar y pedir nueva foto</button></div></div>` : ''}
-        ${needAfter ? `<div class="card card--inner"><h4>Cuadrilla: subir foto de «después»</h4><p class="text-muted">Solo se admite una foto tomada con la cámara en el momento, con fecha, hora y ubicación.</p><div id="aCam"></div>
-          <button type="button" class="btn btn-primary" data-act="upload" id="upBtn" disabled>Subir foto de después</button></div>` : ''}
+      body.querySelectorAll('details[data-sec]').forEach(d => {
+        d.addEventListener('toggle', () => { abiertos[d.dataset.sec] = d.open; });
+      });
 
-        <div class="form-actions"><button type="button" class="btn btn-primary" data-act="resolve" ${canClose ? '' : 'disabled aria-describedby="rHint"'}>${ico('✔')} Marcar como resuelto</button>
-        ${r.status === 'pending' ? '<button type="button" class="btn btn-secondary" data-act="start">Iniciar atención</button>' : ''}</div>
-        ${canClose || r.status === 'resolved' ? '' : '<p class="text-muted" id="rHint">Se habilita solo con una foto de «después» aprobada.</p>'}
-        ${r.status === 'resolved' ? `<p class="status-text">Resuelto el ${U.fmtDateTime(r.closedAt)} · Validado por ${esc(r.closedBy)}</p>` : ''}
+      if (cam) {
+        cam.destroy();
+        cam = null;
+      }
+      EV.ui.currentCleanup = () => { if (cam) cam.destroy(); };
+      if (faltaFoto) {
+        cam = EV.camera.mount(body.querySelector('#aCam'), {
+          onChange: foto => {
+            fotoDespues = foto;
+            body.querySelector('#upBtn').disabled = !foto;
+          }
+        });
+      }
 
-        <h3>Prioridad sugerida: ${p.score}/100 (${p.level})</h3>
-        <div class="table-wrap"><table class="table table--stack"><caption class="sr-only">Factores del puntaje de prioridad</caption><thead><tr><th scope="col">Factor</th><th scope="col">Puntos</th><th scope="col">Por qué</th></tr></thead>
-        <tbody>${p.factors.map(f => `<tr><th scope="row">${f.name}</th><td data-label="Puntos">${f.pts}/${f.max}</td><td data-label="Por qué">${esc(f.note)}</td></tr>`).join('')}</tbody></table></div>
-        ${r.override ? `<p class="notice notice--soft">Ajuste manual a «${r.override.level}»: ${esc(r.override.reason)} <span class="text-muted">(${esc(r.override.by)}, ${U.fmtDateTime(r.override.ts)})</span> <button type="button" class="btn btn-ghost btn-sm" data-act="clearov">Quitar ajuste</button></p>` : ''}
-        <form id="ovf" class="form-grid" novalidate><div class="form-group"><label for="ovl">Cambiar prioridad manualmente</label><select id="ovl"><option>Alta</option><option>Media</option><option>Baja</option></select></div>
-        <div class="form-group"><label for="ovr">Motivo (queda registrado) *</label><input id="ovr" type="text" maxlength="120" autocomplete="off" aria-describedby="ovErr"><p class="field-error" id="ovErr" role="alert"></p></div>
-        <div class="form-group"><button class="btn btn-secondary" type="submit">Aplicar</button></div></form>
-
-        ${g && g.members.length > 1 || r.supporters.length ? `<h3>Punto crítico agrupado</h3><p>${ico('👥')} <strong>${g ? g.people : 1 + r.supporters.length} vecino(s)</strong> reportaron este punto${g && g.members.length > 1 ? ` (${g.members.map(m => esc(m.id)).join(', ')})` : ''}. Al resolverlo, todos los reportes asociados cambian de estado.</p>` : ''}
-
-        <h3>Comentarios (visibles para la junta)</h3>
-        ${r.thread.length ? `<ul class="thread">${r.thread.map(m => `<li class="msg msg--${m.from}"><strong>${FROM[m.from] || m.from}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`).join('')}</ul>` : '<p class="text-muted">Sin comentarios.</p>'}
-        <form id="rf" class="form-group"><label for="rt">Responder</label><textarea id="rt" rows="2" maxlength="280" required></textarea><button class="btn btn-secondary" type="submit">Enviar respuesta</button></form>`;
-
-      if (cam) { cam.destroy(); cam = null; }
-      afterPhoto = null;
-      if (needAfter) cam = EV.camera.mount(body.querySelector('#aCam'), { onChange: ph => { afterPhoto = ph; body.querySelector('#upBtn').disabled = !ph; } });
       body.querySelector('#ovf').addEventListener('submit', e => {
-        e.preventDefault(); const reason = body.querySelector('#ovr').value.trim();
-        if (!EV.ui.fieldError(body, 'ovErr', reason ? '' : 'Indica el motivo del ajuste.')) { body.querySelector('#ovr').focus(); return; }
-        r.override = { level: body.querySelector('#ovl').value, reason, ts: Date.now(), by: WHO }; S.save(); EV.ui.toast('Prioridad ajustada; el motivo quedó registrado.', 'success');
+        e.preventDefault();
+        const motivo = body.querySelector('#ovr').value.trim();
+        if (!EV.ui.setError(body, 'ovErr', motivo ? '' : 'Indica el motivo del ajuste.')) return;
+        r.override = { level: body.querySelector('#ovl').value, reason: motivo, ts: Date.now(), by: QUIEN };
+        S.save();
+        EV.ui.toast('Prioridad ajustada; el motivo quedó registrado.', 'success');
       });
+
       body.querySelector('#rf').addEventListener('submit', e => {
-        e.preventDefault(); const t = body.querySelector('#rt').value.trim(); if (!t) return;
-        S.addMessage(r.thread, 'municipal', t);
-        S.notify('dirigente', `La municipalidad respondió en el reporte ${r.id}.`, r.id);
-        S.save(); EV.ui.toast('Respuesta enviada a la junta.', 'success');
+        e.preventDefault();
+        const texto = body.querySelector('#rt').value.trim();
+        if (!texto) return;
+        S.addMessage(r.thread, 'municipal', texto);
+        S.notify('dirigente', 'La municipalidad respondió en el reporte ' + r.id + '.', r.id);
+        S.save();
+        EV.ui.toast('Respuesta enviada a la junta.', 'success');
       });
-      body.onclick = e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) act(b.dataset.act, r); };
+
+      body.onclick = e => {
+        const b = e.target.closest('[data-act]');
+        if (b && !b.disabled) accion(b.dataset.act, r);
+      };
     }
 
-    function members(r) { const g = S.clusters()[r.id]; return g ? g.members : [r]; }
-    function notifyOwners(list, text, photo) {
-      if (list.some(m => m.reporterId === S.USER || m.supporters.includes(S.USER))) S.notify('vecino', text, list[0].id, photo);
+    function miembros(r) {
+      const grupo = S.clusters()[r.id];
+      return grupo ? grupo.members : [r];
     }
-    function act(a, r) {
-      if (a === 'start') {
-        const list = members(r);
-        list.forEach(m => m.status = 'active');
-        notifyOwners(list, `Tu reporte ${r.id} ahora está en atención.`);
-        S.save(); EV.ui.toast('Reporte(s) en atención.', 'success');
+
+    function avisarVecino(lista, texto, foto) {
+      const esDelVecino = lista.some(m => m.reporterId === S.USER || m.supporters.includes(S.USER));
+      if (esDelVecino) S.notify('vecino', texto, lista[0].id, foto);
+    }
+
+    function accion(tipo, r) {
+      if (tipo === 'start') {
+        miembros(r).forEach(m => { m.status = 'active'; });
+        avisarVecino(miembros(r), 'Tu reporte ' + r.id + ' ahora está en atención.');
+        S.save();
+        EV.ui.toast('Reporte(s) en atención.', 'success');
       }
-      if (a === 'upload' && afterPhoto) {                                   // HU-25
-        r.after = { photo: afterPhoto, status: 'pending', note: '', ts: Date.now() };
-        if (r.status === 'pending') members(r).forEach(m => m.status = 'active');
-        S.save(); EV.ui.toast('Foto de «después» subida. Falta validarla.', 'success');
+
+      // HU-25 Subir foto de "después"
+      if (tipo === 'upload' && fotoDespues) {
+        r.after = { photo: fotoDespues, status: 'pending', note: '', ts: Date.now() };
+        if (r.status === 'pending') miembros(r).forEach(m => { m.status = 'active'; });
+        S.save();
+        EV.ui.toast('Foto de "después" subida. Falta validarla.', 'success');
       }
-      if (a === 'approve') { r.after.status = 'approved'; S.save(); EV.ui.toast('Evidencia aprobada. Ya puedes marcar como resuelto.', 'success'); }
-      if (a === 'reject') {                                                 // HU-26
-        const note = body.querySelector('#rejNote').value.trim();
-        if (!EV.ui.fieldError(body, 'rejErr', note ? '' : 'Indica por qué rechazas la evidencia.')) { body.querySelector('#rejNote').focus(); return; }
-        r.after.status = 'rejected'; r.after.note = note;
-        S.notify('municipal', `Se solicitó una nueva foto de «después» a la cuadrilla para ${r.id}.`, r.id);
-        S.save(); EV.ui.toast('Evidencia rechazada; se solicitó una nueva foto.', 'warn');
+
+      // HU-26 Comparar fotos antes/después
+      if (tipo === 'approve') {
+        r.after.status = 'approved';
+        S.save();
+        EV.ui.toast('Evidencia aprobada. Ya puedes marcar como resuelto.', 'success');
       }
-      if (a === 'clearov') { r.override = null; S.save(); EV.ui.toast('Se quitó el ajuste manual de prioridad.', 'info'); }
-      if (a === 'resolve') {                                                // HU-27 + HU-22: cierra todo el punto agrupado
+      if (tipo === 'reject') {
+        const motivo = body.querySelector('#rejNote').value.trim();
+        if (!EV.ui.setError(body, 'rejErr', motivo ? '' : 'Indica por qué rechazas la evidencia.')) return;
+        EV.ui.confirmar('¿Rechazar la evidencia y pedir una nueva foto a la cuadrilla?', 'Sí, rechazar', () => {
+          r.after.status = 'rejected';
+          r.after.note = motivo;
+          S.notify('municipal', 'Se solicitó una nueva foto de "después" a la cuadrilla para ' + r.id + '.', r.id);
+          S.save();
+          EV.ui.toast('Evidencia rechazada; se solicitó una nueva foto.', 'warn');
+        });
+      }
+
+      if (tipo === 'clearov') {
+        r.override = null;
+        S.save();
+      }
+
+      // HU-27 Marcar reporte como resuelto
+      if (tipo === 'resolve') {
         if (!(r.after && r.after.status === 'approved')) return;
-        const list = members(r), now = Date.now();
-        list.forEach(m => { m.status = 'resolved'; m.closedAt = now; m.closedBy = WHO; if (m !== r) m.after = { ...r.after }; });
-        notifyOwners(list, `¡Tu reporte ${r.id} fue resuelto! Esta es la evidencia de la limpieza.`, r.after.photo.dataUrl);
-        S.save(); EV.ui.toast(`Resuelto${list.length > 1 ? `: se cerraron ${list.length} reportes del mismo punto` : ''}.`, 'success');
+        const lista = miembros(r);
+        const ahora = Date.now();
+        lista.forEach(m => {
+          m.status = 'resolved';
+          m.closedAt = ahora;
+          m.closedBy = QUIEN;
+          if (m !== r) m.after = Object.assign({}, r.after);
+        });
+        avisarVecino(lista, 'Tu reporte ' + r.id + ' fue resuelto. Esta es la evidencia de la limpieza.', r.after.photo.dataUrl);
+        S.save();
+        if (lista.length > 1) EV.ui.toast('Resuelto: se cerraron ' + lista.length + ' reportes del mismo punto.', 'success');
+        else EV.ui.toast('Resuelto.', 'success');
       }
     }
-    draw();
+
     EV.ui.currentDetail = draw;
-    EV.ui.currentCleanup = () => { if (cam) cam.destroy(); };
+    draw();
   }
 
-  /* ================= Panel (HU-17, HU-18, HU-20, HU-21, HU-22) ================= */
+  // HU-17 Ver reportes de la jurisdicción y HU-18 Filtrar reportes por zona, fecha y estado
   function panel(root) {
-    // Los filtros viven en el estado persistido para conservarse al navegar (HU-18).
-    // Se leen siempre de S.s porque otra pestaña puede reemplazar el estado completo.
-    const F = new Proxy({}, { get: (_, k) => S.s.filters[k], set: (_, k, v) => { S.s.filters[k] = v; return true; } });
+    const filtros = S.s.filters;
+    const opcionesZona = S.ZONES.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
     root.innerHTML = `<div class="card"><h2>Panel de reportes de la jurisdicción</h2>
-      <p class="text-muted">${esc(S.MUNI)} · Todos los reportes llegan aquí directamente, sin pasar por el filtro de otra área.</p>
-      <div id="alerts" aria-live="polite"></div><div id="kpis" class="kpis"></div>
-      <form id="flt" class="form-grid filters" aria-label="Filtros del panel">
-        <div class="form-group"><label for="fz">Zona</label><select id="fz"><option value="all">Todas</option>${S.ZONES.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('')}</select></div>
+      <p class="text-muted">${esc(S.MUNI)}. Todos los reportes llegan aquí directamente, sin pasar por el filtro de otra área.</p>
+      <div id="alerts" aria-live="polite"></div>
+      <div id="kpis" class="kpis"></div>
+      <form id="flt" class="form-grid" aria-label="Filtros del panel">
+        <div class="form-group"><label for="fz">Zona</label><select id="fz"><option value="all">Todas</option>${opcionesZona}</select></div>
         <div class="form-group"><label for="fd">Desde</label><input id="fd" type="date"></div>
         <div class="form-group"><label for="fh">Hasta</label><input id="fh" type="date"></div>
-        <div class="form-group"><label for="fe">Estado</label><select id="fe"><option value="all">Todos</option><option value="pending">Pendiente</option><option value="active">En atención</option><option value="resolved">Resuelto</option></select></div>
-        <div class="form-group"><label for="fo">Ordenar por</label><select id="fo"><option value="prioridad">Mayor prioridad</option><option value="recientes">Más recientes</option></select></div>
-        <div class="form-group"><button type="button" class="btn btn-secondary w-100" id="fclear">Limpiar filtros</button></div></form>
-      <div class="panel-split"><div id="pMap" class="map" role="region" aria-label="Mapa de reportes de la jurisdicción"></div><div id="pList" aria-live="polite"></div></div></div>`;
-    const $ = s => root.querySelector(s), map = EV.map.create('pMap', { lat: -12.045, lng: -77.03 }, 13);
-    const bind = [['fz', 'zona'], ['fd', 'desde'], ['fh', 'hasta'], ['fe', 'estado'], ['fo', 'orden']];
-    const syncInputs = () => bind.forEach(([id, key]) => { $('#' + id).value = F[key]; });
-    const filtersActive = () => bind.some(([, key]) => F[key] !== DEFAULT_FILTERS[key]);
-    syncInputs();
-    bind.forEach(([id, key]) => $('#' + id).addEventListener('change', e => { F[key] = e.target.value; S.save(); }));
-    $('#fclear').addEventListener('click', () => { Object.assign(F, DEFAULT_FILTERS); syncInputs(); S.save(); });
+        <div class="form-group"><label for="fe">Estado</label>
+          <select id="fe">
+            <option value="all">Activos (sin resueltos)</option>
+            <option value="pending">Pendiente</option>
+            <option value="active">En atención</option>
+            <option value="resolved">Resuelto</option>
+            <option value="todos">Todos, incluidos resueltos</option>
+          </select></div>
+        <div class="form-group"><label for="fo">
+          <select id="fo">
+            <option value="prioridad">Prioridad (mayor primero)</option>
+            <option value="recientes">Más recientes</option>
+          </select></div>
+        <div class="form-group"><button type="button" class="btn btn-secondary" id="fclear">Limpiar filtros</button></div>
+      </form>
+      <div class="panel-grid">
+        <div id="pMap" class="map" role="region" aria-label="Mapa de reportes de la jurisdicción"></div>
+        <div id="pList" aria-live="polite"></div>
+      </div>
+    </div>`;
 
-    let first = true;
-    function draw() {
-      const all = S.s.reports;
-      const from = F.desde ? new Date(F.desde + 'T00:00:00').getTime() : -Infinity, to = F.hasta ? new Date(F.hasta + 'T23:59:59').getTime() : Infinity;
-      let list = all.filter(r => (F.zona === 'all' || r.zone === F.zona) && (F.estado === 'all' || r.status === F.estado) && r.createdAt >= from && r.createdAt <= to);
-      list = list.map(r => ({ r, p: S.priority(r) }));
-      list.sort((a, b) => F.orden === 'prioridad' ? (b.p.effScore - a.p.effScore) || (a.r.createdAt - b.r.createdAt) : b.r.createdAt - a.r.createdAt);
-      const late = all.filter(S.isOverdue), groups = S.clusters();
-      $('#fclear').disabled = !filtersActive();
-      $('#alerts').innerHTML = late.length ? `<p class="notice notice--warn" role="alert">${ico('⏰')} <strong>${late.length} reporte(s) atrasado(s)</strong> superaron el tiempo límite sin atenderse: ${late.map(r => esc(r.id)).join(', ')}.</p>` : '';
-      $('#kpis').innerHTML = [['Total', all.length], ['Pendientes', all.filter(r => r.status === 'pending').length], ['En atención', all.filter(r => r.status === 'active').length], ['Resueltos', all.filter(r => r.status === 'resolved').length]]
-        .map(([l, n]) => `<div class="kpi"><span class="kpi-n">${n}</span><span class="kpi-l">${l}</span></div>`).join('');
-      if (map) { map.setMarkers(list.map(x => x.r), openReport); if (first && list.length) { map.fit(list.map(x => x.r)); first = false; } }
-      $('#pList').innerHTML = list.length ? `<p class="status-text">${list.length} reporte(s) con los filtros aplicados.</p><ul class="item-list">${list.map(({ r, p }) => {
-        const g = groups[r.id];
-        return `<li class="item"><img class="thumb" src="${r.photo.dataUrl}" alt="Foto del reporte ${esc(r.id)}"><div class="item-main"><strong>${esc(r.id)}</strong> ${EV.ui.badge(r.status)}
-          ${priorityBadge(r, p)}${overdueBadge(r)}<br>
-          <span class="text-muted">${U.fmtDateTime(r.createdAt)} · ${esc(S.zoneById(r.zone).name)}${g && g.people > 1 ? ` · ${ico('👥')} ${g.people} vecinos reportaron este punto` : ''}</span></div>
-          <button type="button" class="btn btn-secondary btn-sm" data-open="${r.id}">Ver detalle</button></li>`; }).join('')}</ul>`
-        : `<p class="empty">No hay reportes con estos filtros.</p>`;
+    const $ = selector => root.querySelector(selector);
+    const mapa = EV.map.create('pMap', { lat: -12.045, lng: -77.03 }, 13);
+    const campos = { fz: 'zona', fd: 'desde', fh: 'hasta', fe: 'estado', fo: 'orden' };
+
+    Object.keys(campos).forEach(idCampo => {
+      const clave = campos[idCampo];
+      $('#' + idCampo).value = filtros[clave];
+      $('#' + idCampo).addEventListener('change', e => {
+        S.s.filters[clave] = e.target.value;
+        S.save();
+      });
+    });
+
+    $('#fclear').addEventListener('click', () => {
+      S.s.filters.zona = 'all';
+      S.s.filters.desde = '';
+      S.s.filters.hasta = '';
+      S.s.filters.estado = 'all';
+      S.s.filters.orden = 'prioridad';
+      Object.keys(campos).forEach(idCampo => { $('#' + idCampo).value = S.s.filters[campos[idCampo]]; });
+      EV.selector.sincronizarTodos(root);
+      S.save();
+    });
+
+    let primeraVez = true;
+    let anteriores = {};
+    let saliendo = false;
+    const dialogo = document.getElementById('dialog');
+
+    function estadoActual(id) {
+      const r = S.s.reports.find(x => x.id === id);
+      return r ? r.status : null;
     }
-    root.addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) openReport(b.dataset.open); });
+
+    function animarSalida(ids) {
+      saliendo = true;
+      const tarjetas = ids
+        .map(id => $('#pList [data-open="' + id + '"]'))
+        .filter(b => b)
+        .map(b => b.closest('li'));
+      let faltan = tarjetas.length;
+      const terminar = () => {
+        saliendo = false;
+        ids.forEach(id => delete anteriores[id]);
+        draw();
+      };
+      if (!faltan) {
+        terminar();
+        return;
+      }
+      tarjetas.forEach(li => {
+        const alto = li.offsetHeight;
+        li.style.overflow = 'hidden';
+        const desliza = li.animate(
+          [{ transform: 'none', opacity: 1 }, { transform: 'translateX(110%)', opacity: 0 }],
+          { duration: 420, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' }
+        );
+        desliza.onfinish = () => {
+          const cierra = li.animate(
+            [
+              { height: alto + 'px', paddingTop: getComputedStyle(li).paddingTop, paddingBottom: getComputedStyle(li).paddingBottom, marginBottom: getComputedStyle(li).marginBottom },
+              { height: '0px', paddingTop: '0px', paddingBottom: '0px', marginBottom: '0px', borderWidth: '0px' }
+            ],
+            { duration: 280, easing: 'ease', fill: 'forwards' }
+          );
+          cierra.onfinish = () => {
+            faltan--;
+            if (faltan === 0) terminar();
+          };
+        };
+      });
+    }
+
+    function draw() {
+      if (saliendo) return;
+      const f = S.s.filters;
+      const todos = S.s.reports;
+      const desde = f.desde ? new Date(f.desde + 'T00:00:00').getTime() : -Infinity;
+      const hasta = f.hasta ? new Date(f.hasta + 'T23:59:59').getTime() : Infinity;
+
+      let lista = todos.filter(r =>
+        (f.zona === 'all' || r.zone === f.zona) &&
+        (f.estado === 'todos' || (f.estado === 'all' ? r.status !== 'resolved' : r.status === f.estado)) &&
+        r.createdAt >= desde && r.createdAt <= hasta
+      );
+      lista = lista.map(r => ({ r: r, p: S.priority(r) }));
+      if (f.orden === 'prioridad') {
+        lista.sort((a, b) => (b.p.effScore - a.p.effScore) || (a.r.createdAt - b.r.createdAt));
+      } else {
+        lista.sort((a, b) => b.r.createdAt - a.r.createdAt);
+      }
+
+      const ids = lista.map(x => x.r.id);
+      const recienResueltos = Object.keys(anteriores).filter(id =>
+        anteriores[id] !== 'resolved' && !ids.includes(id) && estadoActual(id) === 'resolved'
+      );
+      if (recienResueltos.length && EV.ui.isDialogOpen()) {
+        recienResueltos.forEach(id => {
+          const r = S.s.reports.find(x => x.id === id);
+          lista.push({ r: r, p: S.priority(r) });
+        });
+      } else if (recienResueltos.length && !EV.ui.movimientoReducido()) {
+        animarSalida(recienResueltos);
+        return;
+      }
+      const nuevos = {};
+      lista.forEach(x => {
+        nuevos[x.r.id] = recienResueltos.includes(x.r.id) ? anteriores[x.r.id] : x.r.status;
+      });
+      anteriores = nuevos;
+
+      const atrasados = todos.filter(r => S.isOverdue(r));
+      if (atrasados.length) {
+        $('#alerts').innerHTML = `<p class="notice notice--warn" role="alert"><strong>${atrasados.length} reporte(s) atrasado(s)</strong> superaron el tiempo límite sin atenderse: ${atrasados.map(r => esc(r.id)).join(', ')}.</p>`;
+      } else {
+        $('#alerts').innerHTML = '';
+      }
+
+      const indicadores = [
+        ['Total', todos.length],
+        ['Pendientes', todos.filter(r => r.status === 'pending').length],
+        ['En atención', todos.filter(r => r.status === 'active').length],
+        ['Resueltos', todos.filter(r => r.status === 'resolved').length]
+      ];
+      $('#kpis').innerHTML = indicadores.map(k => `<div class="kpi"><span class="kpi-n">${k[1]}</span><span class="kpi-l">${k[0]}</span></div>`).join('');
+
+      if (mapa) {
+        mapa.setMarkers(lista.map(x => x.r), openReport);
+        if (primeraVez && lista.length) {
+          mapa.fit(lista.map(x => x.r));
+          primeraVez = false;
+        }
+      }
+
+      const posiciones = {};
+      $('#pList').querySelectorAll('[data-open]').forEach(boton => {
+        posiciones[boton.dataset.open] = boton.closest('li').getBoundingClientRect().top;
+      });
+      if (lista.length) {
+        const grupos = S.clusters();
+        $('#pList').innerHTML = `<p class="status-text">${lista.length} reporte(s) con los filtros aplicados.</p><ul class="item-list">` + lista.map(x => {
+          const r = x.r;
+          const grupo = grupos[r.id];
+          return `<li class="item">
+            <img class="thumb" src="${r.photo.dataUrl}" alt="Foto del reporte ${esc(r.id)}">
+            <div class="item-main"><strong>${esc(r.id)}</strong> ${EV.ui.badge(r.status)}
+              ${S.isOverdue(r) ? '<span class="badge badge--late">Atrasado</span>' : ''}<br>
+              ${EV.ui.prioridad(x.p, r.override)}<br>
+              <span class="text-muted">${U.fmtDateTime(r.createdAt)} - ${esc(S.zoneById(r.zone).name)}${grupo && grupo.people > 1 ? ' - ' + grupo.people + ' vecinos reportaron este punto' : ''}</span>
+            </div>
+            <button class="btn btn-secondary btn-sm" data-open="${r.id}">Ver detalle</button>
+          </li>`;
+        }).join('') + '</ul>';
+      } else {
+        $('#pList').innerHTML = '<p class="empty">No hay reportes con estos filtros.</p>';
+      }
+
+      if (!EV.ui.movimientoReducido()) {
+        $('#pList').querySelectorAll('[data-open]').forEach(boton => {
+          const antes = posiciones[boton.dataset.open];
+          if (antes === undefined) return;
+          const li = boton.closest('li');
+          const distancia = antes - li.getBoundingClientRect().top;
+          if (Math.abs(distancia) < 2) return;
+          li.animate(
+            [{ transform: 'translateY(' + distancia + 'px)' }, { transform: 'none' }],
+            { duration: 500, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+          );
+        });
+      }
+    }
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('[data-open]');
+      if (b) openReport(b.dataset.open);
+    });
     draw();
-    return { refresh: draw, destroy: () => map && map.destroy() };
+    return { refresh: draw, destroy: () => { if (mapa) mapa.destroy(); } };
   }
 
-  /* ================= Zonas y plazos (HU-29, HU-20) ================= */
+  // HU-29 Compartir estado con la junta y HU-20 configurar el tiempo límite
   function zonas(root) {
-    root.innerHTML = `<div class="card"><h2>Zonas y juntas vecinales</h2><p class="text-muted">Vincula cada zona con su junta: la junta verá el estado de los reportes de su zona, sin poder editarlos.</p>
-      <div class="table-wrap"><table class="table table--stack"><caption class="sr-only">Vinculación de zonas con juntas vecinales</caption><thead><tr><th scope="col">Zona</th><th scope="col">Junta vecinal</th></tr></thead>
-      <tbody>${S.ZONES.map(z => `<tr><th scope="row"><label for="zj-${z.id}">${esc(z.name)}</label></th><td data-label="Junta vecinal"><select id="zj-${z.id}" data-zone="${z.id}">${S.JUNTAS.map(j => `<option value="${j.id}" ${S.s.settings.zoneJunta[z.id] === j.id ? 'selected' : ''}>${esc(j.name)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div></div>
-      <div class="card"><h2>Tiempo límite sin atender</h2><p class="text-muted">Pasado este tiempo, el reporte se marca como atrasado y se genera una alerta.</p>
-      <form id="lim" class="form-grid">${['Alta', 'Media', 'Baja'].map(k => `<div class="form-group"><label for="ov-${k}">Prioridad ${k} (horas)</label><input id="ov-${k}" type="number" inputmode="numeric" min="1" max="720" value="${S.s.settings.overdueHours[k]}"></div>`).join('')}
-      <div class="form-group"><button class="btn btn-primary" type="submit">Guardar plazos</button></div></form></div>`;
+    const filas = S.ZONES.map(z => {
+      const opciones = S.JUNTAS.map(j => `<option value="${j.id}" ${S.s.settings.zoneJunta[z.id] === j.id ? 'selected' : ''}>${esc(j.name)}</option>`).join('');
+      return `<tr>
+        <th scope="row" data-label="Zona"><label for="zj-${z.id}">${esc(z.name)}</label></th>
+        <td data-label="Junta vecinal"><select id="zj-${z.id}" data-zone="${z.id}">${opciones}</select></td>
+      </tr>`;
+    }).join('');
+
+    const plazos = ['Alta', 'Media', 'Baja'].map(k => `<div class="form-group">
+      <label for="ov-${k}">Prioridad ${k} (horas)</label>
+      <input id="ov-${k}" type="number" min="1" max="720" value="${S.s.settings.overdueHours[k]}">
+    </div>`).join('');
+
+    root.innerHTML = `<div class="card"><h2>Zonas y juntas vecinales</h2>
+        <p class="text-muted">Vincula cada zona con su junta: la junta verá el estado de los reportes de su zona, sin poder editarlos.</p>
+        <div class="table-wrap"><table class="table table--cards">
+          <caption class="sr-only">Vinculación de zonas con juntas vecinales</caption>
+          <thead><tr><th scope="col">Zona</th><th scope="col">Junta vecinal</th></tr></thead>
+          <tbody>${filas}</tbody>
+        </table></div>
+      </div>
+      <div class="card"><h2>Tiempo límite sin atender</h2>
+        <p class="text-muted">Pasado este tiempo, el reporte se marca como atrasado y se genera una alerta.</p>
+        <form id="lim" class="form-grid">${plazos}
+          <div class="form-group"><button class="btn btn-primary" type="submit">Guardar plazos</button></div>
+        </form>
+      </div>`;
+
     root.addEventListener('change', e => {
-      const sel = e.target.closest('[data-zone]'); if (!sel) return;
-      S.s.settings.zoneJunta[sel.dataset.zone] = sel.value; S.save();
-      EV.ui.toast(`${S.zoneById(sel.dataset.zone).name} vinculada a ${S.juntaById(sel.value).name}.`, 'success');
+      const select = e.target.closest('[data-zone]');
+      if (!select) return;
+      S.s.settings.zoneJunta[select.dataset.zone] = select.value;
+      S.save();
+      EV.ui.toast(S.zoneById(select.dataset.zone).name + ' vinculada a ' + S.juntaById(select.value).name + '.', 'success');
     });
+
     root.querySelector('#lim').addEventListener('submit', e => {
       e.preventDefault();
-      ['Alta', 'Media', 'Baja'].forEach(k => { const v = +root.querySelector('#ov-' + k).value; if (v >= 1) S.s.settings.overdueHours[k] = v; });
-      S.s.reports.forEach(r => r.overdueNotified = false); S.save(); checkAlerts(); EV.ui.toast('Plazos guardados.', 'success');
+      ['Alta', 'Media', 'Baja'].forEach(k => {
+        const valor = Number(root.querySelector('#ov-' + k).value);
+        if (valor >= 1) S.s.settings.overdueHours[k] = valor;
+      });
+      checkAlerts();
+      EV.ui.toast('Plazos guardados.', 'success');
     });
     return {};
   }
 
-  /* ================= Solicitudes de juntas (HU-43, HU-47) ================= */
+  // HU-43 Ver estado de solicitudes y HU-47 Responder dentro del hilo
   function solicitudes(root) {
-    root.innerHTML = `<div class="card"><h2>Solicitudes de las juntas vecinales</h2><div id="sl" aria-live="polite"></div></div>`;
+    root.innerHTML = '<div class="card"><h2>Solicitudes de las juntas vecinales</h2><div id="sl" aria-live="polite"></div></div>';
+
     function draw() {
-      const list = [...S.s.solicitudes].sort((a, b) => b.createdAt - a.createdAt);
-      root.querySelector('#sl').innerHTML = list.length ? `<ul class="item-list">${list.map(s => `<li class="item item--col"><div class="feed-header"><div><strong>${esc(s.id)}</strong> — ${esc(s.asunto)}<br><span class="text-muted">${esc(S.juntaById(s.juntaId).name)} · ${U.fmtDateTime(s.createdAt)}${S.overdueSolicitud(s) ? ` · ${ico('⏰')} sin respuesta` : ''}</span></div>
-        <div class="form-row"><label for="st-${s.id}">Estado</label><select id="st-${s.id}" data-sol="${s.id}">${Object.entries(S.SOL_ESTADOS).map(([k, v]) => `<option value="${k}" ${s.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
-        <div class="form-actions"><button type="button" class="btn btn-secondary btn-sm" data-thread="${s.id}">Ver hilo y responder (${s.thread.length})</button></div></li>`).join('')}</ul>` : '<p class="empty">No hay solicitudes.</p>';
+      const lista = S.s.solicitudes.slice().sort((a, b) => b.createdAt - a.createdAt);
+      if (!lista.length) {
+        root.querySelector('#sl').innerHTML = '<p class="empty">No hay solicitudes.</p>';
+        return;
+      }
+      root.querySelector('#sl').innerHTML = '<ul class="item-list">' + lista.map(s => {
+        const opciones = Object.keys(S.SOL_ESTADOS).map(k => `<option value="${k}" ${s.status === k ? 'selected' : ''}>${S.SOL_ESTADOS[k]}</option>`).join('');
+        return `<li class="item item--col">
+          <div class="feed-header">
+            <div><strong>${esc(s.id)}</strong> - ${esc(s.asunto)}<br>
+              <span class="text-muted">${esc(S.juntaById(s.juntaId).name)} - ${U.fmtDateTime(s.createdAt)}${S.overdueSolicitud(s) ? ' - Sin respuesta a tiempo' : ''}</span>
+            </div>
+            <div class="form-row"><label for="st-${s.id}">Estado</label><select id="st-${s.id}" data-sol="${s.id}">${opciones}</select></div>
+          </div>
+          <button class="btn btn-secondary btn-sm" data-thread="${s.id}">Ver hilo y responder (${s.thread.length})</button>
+        </li>`;
+      }).join('') + '</ul>';
     }
+
     root.addEventListener('change', e => {
-      const sel = e.target.closest('[data-sol]'); if (!sel) return;
-      const s = S.s.solicitudes.find(x => x.id === sel.dataset.sol); s.status = sel.value; s.lastChange = Date.now(); s.overdueNotified = false;
-      S.notify('dirigente', `La solicitud ${s.id} cambió a «${S.SOL_ESTADOS[s.status]}».`, s.id); S.save(); EV.ui.toast('Estado actualizado.', 'success');
+      const select = e.target.closest('[data-sol]');
+      if (!select) return;
+      const s = S.s.solicitudes.find(x => x.id === select.dataset.sol);
+      s.status = select.value;
+      s.lastChange = Date.now();
+      S.notify('dirigente', 'La solicitud ' + s.id + ' cambió a "' + S.SOL_ESTADOS[s.status] + '".', s.id);
+      S.save();
+      EV.ui.toast('Estado actualizado.', 'success');
     });
-    root.addEventListener('click', e => { const b = e.target.closest('[data-thread]'); if (b) openSol(b.dataset.thread); });
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('[data-thread]');
+      if (b) abrirHilo(b.dataset.thread);
+    });
+
+    function abrirHilo(id) {
+      const body = EV.ui.openDialog('Solicitud ' + id, '');
+      function d() {
+        const s = S.s.solicitudes.find(x => x.id === id);
+        const mensajes = s.thread.slice().sort((a, b) => a.ts - b.ts);
+        let hilo = '<p class="text-muted">Sin mensajes.</p>';
+        if (mensajes.length) {
+          hilo = '<ul class="thread">' + mensajes.map(m => {
+            const autor = m.from === 'municipal' ? 'Tú (municipalidad)' : 'Junta vecinal';
+            return `<li class="msg msg--${m.from}"><strong>${autor}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`;
+          }).join('') + '</ul>';
+        }
+        body.innerHTML = `<h3>${esc(s.asunto)}</h3>${hilo}
+          <form id="mr" class="form-group">
+            <label for="mrt">Responder dentro del hilo</label>
+            <textarea id="mrt" rows="2" maxlength="280" required></textarea>
+            <button class="btn btn-primary" type="submit">Enviar respuesta</button>
+          </form>`;
+        body.querySelector('#mr').addEventListener('submit', e => {
+          e.preventDefault();
+          const texto = body.querySelector('#mrt').value.trim();
+          if (!texto) return;
+          S.addMessage(s.thread, 'municipal', texto);
+          if (s.status === 'enviada') {
+            s.status = 'revision';
+            s.lastChange = Date.now();
+          }
+          S.notify('dirigente', 'Respuesta nueva del municipio en la solicitud ' + s.id + '.', s.id);
+          S.save();
+          EV.ui.toast('Respuesta enviada.', 'success');
+        });
+      }
+      EV.ui.currentDetail = d;
+      d();
+    }
+
     draw();
     return { refresh: draw };
   }
-  function openSol(id) {
-    const body = EV.ui.openDialog(`Solicitud ${id}`, '');
-    function d() {
-      const s = S.s.solicitudes.find(x => x.id === id);
-      if (!s) return;
-      const msgs = [...s.thread].sort((a, b) => a.ts - b.ts);
-      body.innerHTML = `<p><span class="badge badge--sol-${s.status}">${S.SOL_ESTADOS[s.status]}</span> <span class="text-muted">${esc(S.juntaById(s.juntaId).name)}</span></p>
-        <h3>${esc(s.asunto)}</h3>${msgs.length ? `<ul class="thread">${msgs.map(m => `<li class="msg msg--${m.from}"><strong>${m.from === 'municipal' ? 'Tú (municipalidad)' : 'Junta vecinal'}</strong> <span class="text-muted">${U.fmtDateTime(m.ts)}</span><br>${esc(m.text)}</li>`).join('')}</ul>` : '<p class="text-muted">Sin mensajes.</p>'}
-        <form id="mr" class="form-group"><label for="mrt">Responder dentro del hilo</label><textarea id="mrt" rows="2" maxlength="280" required></textarea><button class="btn btn-primary" type="submit">Enviar respuesta</button></form>`;
-      body.querySelector('#mr').addEventListener('submit', e => {
-        e.preventDefault(); const t = body.querySelector('#mrt').value.trim(); if (!t) return;
-        S.addMessage(s.thread, 'municipal', t);
-        if (s.status === 'enviada') { s.status = 'revision'; s.lastChange = Date.now(); }
-        S.notify('dirigente', `Respuesta nueva del municipio en la solicitud ${s.id}.`, s.id); S.save(); EV.ui.toast('Respuesta enviada.', 'success');
-      });
-    }
-    d();
-    EV.ui.currentDetail = d;
-  }
-
-  function openRef(ref) {
-    if (ref.startsWith('REP-')) openReport(ref);
-    else if (ref.startsWith('SOL-')) openSol(ref);
-  }
 
   return {
-    checkAlerts, openRef, refTypes: ['REP', 'SOL'],
+    checkAlerts: checkAlerts,
     tabs: [
-      { id: 'panel', glyph: '📊', label: 'Panel', render: panel },
-      { id: 'zonas', glyph: '⚙️', label: 'Zonas y plazos', render: zonas },
-      { id: 'solicitudes', glyph: '📨', label: 'Solicitudes de juntas', render: solicitudes }
+      { id: 'panel', icon: '../assets/panel.svg', label: 'Panel', render: panel },
+      { id: 'zonas', icon: '../assets/zonas.svg', label: 'Zonas', render: zonas },
+      { id: 'solicitudes', icon: '../assets/solicitud.svg', label: 'Solicitudes', render: solicitudes }
     ]
   };
 })();
