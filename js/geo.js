@@ -1,26 +1,41 @@
-/* EcoVecinos · geo.js
-   Ubicación del usuario. El permiso se pide solo cuando el vecino inicia un
-   reporte y tras un aviso de privacidad (HU-02). */
 EV.geo = (function () {
-  // Centro de Lima hasta que el usuario conceda el permiso.
-  let loc = { lat: -12.04318, lng: -77.02824, exact: false };
+  const LIMA = { lat: -12.04318, lng: -77.02824 };
+  let ubicacion = { lat: LIMA.lat, lng: LIMA.lng, exact: false, demo: true };
 
   function request() {
     return new Promise(resolve => {
-      if (!('geolocation' in navigator)) return resolve({ ok: false, reason: 'unsupported' });
+      if (!('geolocation' in navigator)) {
+        resolve({ ok: false });
+        return;
+      }
       navigator.geolocation.getCurrentPosition(
-        p => {
-          loc = { lat: p.coords.latitude, lng: p.coords.longitude, exact: true };
+        pos => {
+          ubicacion = { lat: pos.coords.latitude, lng: pos.coords.longitude, exact: true, demo: false };
           resolve({ ok: true });
         },
-        err => resolve({ ok: false, reason: err.code === 1 ? 'denied' : 'error' }),
+        () => resolve({ ok: false }),
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
       );
     });
   }
-  return {
-    request,
-    get: () => ({ ...loc }),
-    set: (lat, lng, exact) => { loc = { lat, lng, exact: !!exact }; }
-  };
+
+  function get() {
+    return { lat: ubicacion.lat, lng: ubicacion.lng, exact: ubicacion.exact, demo: ubicacion.demo };
+  }
+
+  function fueraDeZona() {
+    if (ubicacion.demo) return false;
+    let menor = Infinity;
+    EV.store.ZONES.forEach(zona => {
+      const d = EV.util.dist(ubicacion, zona);
+      if (d < menor) menor = d;
+    });
+    return menor > 20000;
+  }
+
+  function usarDemo() {
+    ubicacion = { lat: LIMA.lat, lng: LIMA.lng, exact: false, demo: true };
+  }
+
+  return { request, get, fueraDeZona, usarDemo };
 })();
