@@ -4,9 +4,9 @@ Ejecutar sobre la URL de **GitHub Pages**, no sobre el prototipo de Figma. Compl
 
 ID | HU | Criterio / escenario | Acción de prueba | Resultado esperado | Resultado obtenido | Estado
 
-PA-01 | HU-01 | Foto solo con cámara | Reportar → abrir cámara → tomar foto | La foto se muestra con fecha, hora y ubicación
+PA-01 | HU-01 | Cámara al iniciar el reporte | Tocar la pestaña «Reportar» → tomar foto | La cámara se abre sola, sin opción de galería; la foto se muestra con fecha, hora y ubicación
 PA-02 | HU-01 | Sin foto no se envía | Intentar continuar sin foto | «Continuar» deshabilitado y mensaje visible 
-PA-03 | HU-02 | Permiso de ubicación | Paso 2 por primera vez | Aviso de uso de ubicación antes del permiso del navegador 
+PA-03 | HU-02 | Permiso de ubicación | Iniciar el primer reporte | Aviso de uso de ubicación antes del permiso del navegador; al tomar la foto la ubicación se adjunta sola 
 PA-04 | HU-02 | Ubicación denegada | Elegir «Ahora no» | Se puede mover el pin y enviar 
 PA-05 | HU-02 | Derivación | Mover el pin a otra zona | Cambia la municipalidad/junta indicada 
 PA-06 | HU-03 | Envío en 3 pantallas | Reportar de principio a fin | Foto → ubicación/envío → confirmación, sin texto obligatorio 
@@ -16,19 +16,19 @@ PA-09 | HU-06 | Estado en vivo | Cambiar estado como Municipalidad (otra pestañ
 PA-10 | HU-08 | Historial | Mis reportes → filtrar por estado | Más recientes primero; el filtro funciona 
 PA-11 | HU-10 | Comentario | Abrir detalle → comentar | Se guarda con fecha y hora; sin comentarios si está resuelto 
 PA-12 | HU-11 | Faenas cercanas | Filtrar por distancia | Solo faenas dentro del radio 
-PA-13 | HU-12 | Inscripción / cancelación | Inscribirse; cancelar con < 24 h | Calendario actualizado; cancelación bloqueada con mensaje 
+PA-13 | HU-12 | Inscripción / cancelación | Abrir el detalle de una faena → «Inscribirme»; cancelar con > 24 h y con < 24 h | Calendario actualizado; al cancelar se libera el cupo; con < 24 h la cancelación se bloquea con mensaje 
 PA-14 | HU-17 | Panel | Ingresar como Municipalidad | Todos los reportes en mapa y lista 
 PA-15 | HU-18 | Filtros combinados | Zona + estado + fechas; cambiar de pestaña y volver | Resultados correctos y filtros conservados 
 PA-16 | HU-20 | Atrasados | Reducir el plazo en «Zonas» | Reportes marcados «Atrasado» y alerta visible 
 PA-17 | HU-21 | Prioridad | Abrir detalle de un reporte | Puntaje con 4 factores; ajuste manual exige motivo
 PA-18 | HU-22 | Agrupación | Revisar REP-0001 y REP-0002 | Aparece «3 vecinos reportaron»; al resolver se cierran ambos 
-PA-19 | HU-25 | Foto de después | Subir foto como cuadrilla | Queda «por validar» con fecha y hora 
-PA-20 | HU-26 | Comparar | Ver antes/después; rechazar sin motivo | Lado a lado; el rechazo exige motivo y pide nueva foto 
+PA-19 | HU-25 | Foto de después | Municipalidad → «Cuadrilla» → «Subir foto de después» | Solo cámara; queda «por validar» con fecha, hora y ubicación, junto a la foto de antes 
+PA-20 | HU-26 | Comparar | Ver antes/después; rechazar sin motivo y con motivo | Lado a lado; el rechazo exige motivo y la tarea vuelve a «Cuadrilla» marcada «Nueva foto solicitada» 
 PA-21 | HU-27 | Resolver | Intentar resolver sin aprobar; luego aprobar | Botón bloqueado → habilitado; el vecino recibe la foto 
 PA-22 | HU-29 | Zona–junta | Vincular zona z2 con otra junta | La junta ve esos reportes en solo lectura 
 PA-23 | HU-31 | Responder | Municipalidad comenta un reporte | La junta lo ve y recibe notificación 
 PA-24 | HU-33 | Crear faena | Enviar el formulario vacío / válido | Errores por campo / faena visible para vecinos 
-PA-25 | HU-34 | Invitar | «Invitar a vecinos» | Confirmación con número de invitados; vecino recibe aviso 
+PA-25 | HU-34 | Invitar | «Invitar a vecinos» → «Ver invitados» | Se invita a los vecinos registrados de la zona; el vecino recibe aviso; se ve cuántos confirmaron 
 PA-26 | HU-35 | Insumos | Editar insumos el mismo día | Campos bloqueados con explicación 
 PA-27 | HU-36 | Asistencia | Registrar asistencia | Solo asistentes reciben 10 puntos 
 PA-28 | HU-38 | Evidencia | Foto + descripción | Se abre un caso con evidencia sellada 

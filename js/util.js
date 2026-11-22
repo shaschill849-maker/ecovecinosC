@@ -3,6 +3,8 @@ window.EV = window.EV || {};
 const HORA = 3600000;
 const DIA = 86400000;
 
+// Funciones generales: texto, fechas y distancias
+
 EV.util = {
   esc(texto) {
     if (texto === null || texto === undefined) return '';
@@ -13,6 +15,7 @@ EV.util = {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   },
+
   fmtDate(ts) {
     return new Date(ts).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
   },
@@ -39,6 +42,7 @@ EV.util = {
   startOf(faena) {
     return new Date(faena.date + 'T' + (faena.time || '00:00')).getTime();
   },
+
   dist(a, b) {
     const R = 6371000;
     const rad = x => x * Math.PI / 180;
@@ -63,10 +67,17 @@ EV.ui = {
     active: 'En atención',
     resolved: 'Resuelto'
   },
+  origen: null,
 
   badge(status) {
     const texto = EV.ui.STATUS[status] || EV.ui.STATUS.pending;
     return `<span class="badge badge--${status}">${texto}</span>`;
+  },
+
+  prioridad(p, manual) {
+    const nivel = p.eff.toLowerCase();
+    const texto = manual ? 'Prioridad ' + p.eff + ' (manual)' : 'Prioridad ' + p.eff + ' - ' + p.score;
+    return `<span class="prio prio--${nivel}"><span class="prio-barras" aria-hidden="true"><i></i><i></i><i></i></span>${texto}</span>`;
   },
 
   toast(mensaje, tipo) {
@@ -85,10 +96,54 @@ EV.ui = {
     }, 4000);
   },
 
-  origen: null,
+  avisoUbicacionDemo() {
+    if (!EV.geo.fueraDeZona()) return '';
+    return `<div class="notice notice--warn">
+      <p><strong>Estás fuera de las zonas de la demo.</strong> Los reportes y faenas de ejemplo están en Lima, por eso aquí no aparece nada cerca de ti.</p>
+      <div class="form-actions"><button type="button" class="btn btn-secondary" data-ubicacion-demo>Usar ubicación de demostración</button></div>
+    </div>`;
+  },
+
+  setError(root, idError, mensaje) {
+    const error = root.querySelector('#' + idError);
+    const campo = root.querySelector('[aria-describedby="' + idError + '"]');
+    if (error) error.textContent = mensaje || '';
+    if (campo) {
+      if (mensaje) {
+        campo.setAttribute('aria-invalid', 'true');
+        campo.classList.remove('temblar');
+        void campo.offsetWidth;
+        campo.classList.add('temblar');
+      } else {
+        campo.removeAttribute('aria-invalid');
+      }
+    }
+    return !mensaje;
+  },
 
   movimientoReducido() {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  },
+
+  colapsar(el, despues) {
+    const terminar = () => {
+      el.remove();
+      if (despues) despues();
+    };
+    if (EV.ui.movimientoReducido()) {
+      terminar();
+      return;
+    }
+    const estilo = getComputedStyle(el);
+    const anim = el.animate(
+      [
+        { height: el.offsetHeight + 'px', opacity: 1, marginTop: estilo.marginTop, marginBottom: estilo.marginBottom, paddingTop: estilo.paddingTop, paddingBottom: estilo.paddingBottom },
+        { height: '0px', opacity: 0, marginTop: '0px', marginBottom: '0px', paddingTop: '0px', paddingBottom: '0px' }
+      ],
+      { duration: 320, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' }
+    );
+    el.style.overflow = 'hidden';
+    anim.onfinish = terminar;
   },
 
   selectorDe(el) {
@@ -171,12 +226,12 @@ EV.ui = {
     };
   },
 
-  openDialog(titulo, html, alCerrar) {
+  openDialog(titulo, html) {
     const dlg = document.getElementById('dialog');
     document.getElementById('dialogTitle').textContent = titulo;
     const body = document.getElementById('dialogBody');
     body.innerHTML = html;
-    dlg._onClose = alCerrar || null;
+    body.onclick = null;
     EV.ui.mostrarDialogo(dlg);
     return body;
   },
@@ -201,37 +256,6 @@ EV.ui = {
     document.getElementById('confirmNo').onclick = () => EV.ui.ocultarDialogo(dlg);
     EV.ui.mostrarDialogo(dlg);
     document.getElementById('confirmNo').focus();
-  },
-
-  setError(root, idError, mensaje) {
-    const error = root.querySelector('#' + idError);
-    const campo = root.querySelector('[aria-describedby="' + idError + '"]');
-    if (error) error.textContent = mensaje || '';
-    if (campo) {
-      if (mensaje) {
-        campo.setAttribute('aria-invalid', 'true');
-        campo.classList.remove('temblar');
-        void campo.offsetWidth;
-        campo.classList.add('temblar');
-      } else {
-        campo.removeAttribute('aria-invalid');
-      }
-    }
-    return !mensaje;
-  },
-
-  prioridad(p, manual) {
-    const nivel = p.eff.toLowerCase();
-    const texto = manual ? 'Prioridad ' + p.eff + ' (manual)' : 'Prioridad ' + p.eff + ' - ' + p.score;
-    return `<span class="prio prio--${nivel}"><span class="prio-barras" aria-hidden="true"><i></i><i></i><i></i></span>${texto}</span>`;
-  },
-
-  avisoUbicacionDemo() {
-    if (!EV.geo.fueraDeZona()) return '';
-    return `<div class="notice notice--warn">
-      <p><strong>Estás fuera de las zonas de la demo.</strong> Los reportes y faenas de ejemplo están en Lima, por eso aquí no aparece nada cerca de ti.</p>
-      <div class="form-actions"><button type="button" class="btn btn-secondary" data-ubicacion-demo>Usar ubicación de demostración</button></div>
-    </div>`;
   }
 };
 
@@ -250,10 +274,6 @@ EV.selector = (function () {
   let contador = 0;
   const abiertos = new Set();
 
-  function opciones(select) {
-    return Array.from(select.options);
-  }
-
   function sincronizar(select) {
     const caja = select._caja;
     if (!caja) return;
@@ -270,8 +290,7 @@ EV.selector = (function () {
     indice = Math.max(0, Math.min(items.length - 1, indice));
     items.forEach((li, i) => li.classList.toggle('activa', i === indice));
     caja._activa = indice;
-    const lista = caja.querySelector('[role=listbox]');
-    lista.setAttribute('aria-activedescendant', items[indice].id);
+    caja.querySelector('[role=listbox]').setAttribute('aria-activedescendant', items[indice].id);
     items[indice].scrollIntoView({ block: 'nearest' });
   }
 
@@ -353,7 +372,7 @@ EV.selector = (function () {
 
     const caja = document.createElement('div');
     caja.className = 'selector';
-    const lista = opciones(select).map((op, i) =>
+    const lista = Array.from(select.options).map((op, i) =>
       `<li role="option" id="${id}-op${i}" data-i="${i}">${EV.util.esc(op.textContent)}</li>`).join('');
     caja.innerHTML = `
       <button type="button" class="selector-boton" aria-haspopup="listbox" aria-expanded="false" id="${id}-boton"

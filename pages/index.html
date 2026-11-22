@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body>
+  <!-- Pantalla de inicio -->
   <script>
     document.documentElement.classList.add('js');
     (function () {
@@ -27,6 +28,7 @@
   </script>
   <a class="skip-link" href="#demo">Saltar a la aplicación</a>
 
+  <!-- Encabezado -->
   <header class="header">
     <div class="container header-content">
       <a class="brand" href="#inicio" aria-label="EcoVecinos, ir al inicio"><img src="../assets/logo.svg" alt="" width="36" height="36"> EcoVecinos</a>
@@ -40,6 +42,7 @@
   </header>
 
   <main id="inicio">
+    <!-- Portada -->
     <section class="hero" aria-labelledby="hero-title">
       <div class="container hero-grid">
         <div>
@@ -55,6 +58,7 @@
       </div>
     </section>
 
+    <!-- Cómo funciona -->
     <section id="como-funciona" class="container section" aria-labelledby="cf-title">
       <h2 id="cf-title" class="revelar">Cómo funciona</h2>
       <p class="text-muted revelar">Toca un paso para probarlo en la demo.</p>
@@ -66,6 +70,7 @@
       </ol>
     </section>
 
+    <!-- Demo por roles -->
     <section id="demo" class="container section" aria-labelledby="demo-title">
       <h2 id="demo-title" class="revelar">Demo interactiva</h2>
       <p class="text-muted revelar">Esta demo guarda los datos solo en tu navegador. Cambia de rol para ver cada experiencia; todo lo que hagas se refleja en los demás roles.</p>
@@ -89,6 +94,7 @@
     </section>
   </main>
 
+  <!-- Pie de página -->
   <footer class="footer">
     <div class="container revelar">
       <p><strong>EcoVecinos</strong>. Proyecto académico HCI for UX Design (UPC). Las zonas, juntas y datos son de demostración.</p>
@@ -97,6 +103,7 @@
     </div>
   </footer>
 
+  <!-- Mensajes flotantes y ventanas -->
   <div id="toasts" class="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
   <dialog id="dialog" aria-labelledby="dialogTitle">
@@ -116,6 +123,7 @@
     </div>
   </dialog>
 
+  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="../js/util.js"></script>
   <script src="../js/geo.js"></script>

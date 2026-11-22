@@ -42,5 +42,5 @@ EV.map = (function () {
     };
   }
 
-  return { create, COLORS };
+  return { create };
 })();
