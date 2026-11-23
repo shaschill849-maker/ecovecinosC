@@ -6,6 +6,7 @@ EV.views.dirigente = (function () {
   const PUNTOS_POR_FAENA = 10;
   const FROM = { vecino: 'Vecino', municipal: 'Municipalidad', dirigente: 'Tú (junta)' };
   const junta = () => S.juntaById(JID);
+  const zonaDeLaJunta = () => S.ZONES.find(z => S.s.settings.zoneJunta[z.id] === JID) || S.ZONES[0];
   const setError = EV.ui.setError;
 
   // HU-44 Notificar solicitud sin respuesta al ingresar
@@ -30,6 +31,7 @@ EV.views.dirigente = (function () {
             <div class="form-group"><label for="fPlace">Lugar *</label><input id="fPlace" type="text" maxlength="80" aria-describedby="ePlace"><p class="field-error" id="ePlace" role="alert"></p></div>
             <div class="form-group"><label for="fDate">Fecha *</label><input id="fDate" type="date" aria-describedby="eDate"><p class="field-error" id="eDate" role="alert"></p></div>
             <div class="form-group"><label for="fTime">Hora *</label><input id="fTime" type="time" aria-describedby="eTime"><p class="field-error" id="eTime" role="alert"></p></div>
+            <div class="form-group"><label for="fCupos">Cupos *</label><input id="fCupos" type="number" min="1" max="200" value="20" aria-describedby="eCupos"><p class="field-error" id="eCupos" role="alert"></p></div>
           </div>
           <div class="form-group"><label for="fDesc">Descripción *</label><textarea id="fDesc" rows="2" maxlength="200" aria-describedby="eDesc"></textarea><p class="field-error" id="eDesc" role="alert"></p></div>
           <div class="form-group checkbox-group"><input type="checkbox" id="fImpl"><label for="fImpl">La junta garantiza guantes y bolsas</label></div>
@@ -47,6 +49,7 @@ EV.views.dirigente = (function () {
       <div class="card"><h2>Faenas de mi junta</h2><div id="fl" aria-live="polite"></div></div>`;
 
     const $ = selector => root.querySelector(selector);
+    const buscar = id => S.s.faenas.find(x => x.id === id);
     $('#fDate').min = U.todayISO();
 
     function limpiarFormulario() {
@@ -58,7 +61,7 @@ EV.views.dirigente = (function () {
       $('#fInsJ').disabled = false;
       $('#fInsV').disabled = false;
       $('#insNote').textContent = '';
-      ['ePlace', 'eDate', 'eTime', 'eDesc'].forEach(id => setError(root, id, ''));
+      ['ePlace', 'eDate', 'eTime', 'eCupos', 'eDesc'].forEach(id => setError(root, id, ''));
     }
 
     function editar(f) {
@@ -69,6 +72,7 @@ EV.views.dirigente = (function () {
       $('#fPlace').value = f.place;
       $('#fDate').value = f.date;
       $('#fTime').value = f.time;
+      $('#fCupos').value = f.cupos;
       $('#fDesc').value = f.desc;
       $('#fImpl').checked = f.implementos;
       $('#fInsJ').value = f.insumosJunta;
@@ -87,8 +91,10 @@ EV.views.dirigente = (function () {
         place: $('#fPlace').value.trim(),
         date: $('#fDate').value,
         time: $('#fTime').value,
+        cupos: Number($('#fCupos').value),
         desc: $('#fDesc').value.trim()
       };
+      const actual = editando ? buscar(editando) : null;
 
       let errorFecha = '';
       if (!datos.date) errorFecha = 'Indica la fecha.';
@@ -98,35 +104,39 @@ EV.views.dirigente = (function () {
       if (!datos.time) errorHora = 'Indica la hora.';
       else if (datos.date && U.startOf({ date: datos.date, time: datos.time }) < Date.now()) errorHora = 'Esa hora ya pasó.';
 
+      let errorCupos = '';
+      if (!datos.cupos || datos.cupos < 1) errorCupos = 'Indica al menos 1 cupo.';
+      else if (actual && datos.cupos < actual.inscritos.length) errorCupos = 'Ya hay ' + actual.inscritos.length + ' inscritos; no puedes poner menos cupos.';
+
       let ok = true;
       ok = setError(root, 'ePlace', datos.place ? '' : 'Indica el lugar de la faena.') && ok;
       ok = setError(root, 'eDate', errorFecha) && ok;
       ok = setError(root, 'eTime', errorHora) && ok;
+      ok = setError(root, 'eCupos', errorCupos) && ok;
       ok = setError(root, 'eDesc', datos.desc ? '' : 'Agrega una breve descripción.') && ok;
       if (!ok) {
         EV.ui.toast('Revisa los campos marcados.', 'error');
         return;
       }
 
-      if (editando) {
-        const f = S.s.faenas.find(x => x.id === editando);
-        Object.assign(f, datos, { implementos: $('#fImpl').checked });
+      if (actual) {
+        Object.assign(actual, datos, { implementos: $('#fImpl').checked });
         if (!$('#fInsJ').disabled) {
-          f.insumosJunta = $('#fInsJ').value.trim();
-          f.insumosVecinos = $('#fInsV').value.trim();
+          actual.insumosJunta = $('#fInsJ').value.trim();
+          actual.insumosVecinos = $('#fInsV').value.trim();
         }
-        if (f.inscritos.some(i => i.id === S.USER)) {
-          S.notify('vecino', 'La faena en ' + f.place + ' fue actualizada. Revisa los detalles.', f.id);
+        if (actual.inscritos.some(i => i.id === S.USER)) {
+          S.notify('vecino', 'La faena en ' + actual.place + ' fue actualizada. Revisa los detalles.', actual.id);
         }
         S.save();
         EV.ui.toast('Faena actualizada.', 'success');
       } else {
-        const zona = S.ZONES.find(z => S.s.settings.zoneJunta[z.id] === JID) || S.ZONES[0];
+        const zona = zonaDeLaJunta();
         S.s.faenas.push(Object.assign({
           id: S.nextId('FAE', 'fae'), organizer: 'junta', organizerName: junta().name, juntaId: JID, zone: zona.id, lat: zona.lat, lng: zona.lng
         }, datos, {
           implementos: $('#fImpl').checked, insumosJunta: $('#fInsJ').value.trim(), insumosVecinos: $('#fInsV').value.trim(),
-          cancelled: false, invited: 0, attendanceSaved: false, inscritos: []
+          cancelled: false, attendanceSaved: false, invited: [], inscritos: []
         }));
         S.save();
         EV.ui.toast('Faena registrada. Ya es visible para los vecinos de la zona.', 'success');
@@ -152,17 +162,25 @@ EV.views.dirigente = (function () {
         let botones = '';
         if (!f.cancelled && !empezo) {
           botones += `<button class="btn btn-secondary btn-sm" data-edit="${f.id}">Editar</button>
-            <button class="btn btn-secondary btn-sm" data-invite="${f.id}">${f.invited ? 'Reenviar invitación' : 'Invitar a vecinos'}</button>
+            <button class="btn btn-secondary btn-sm" data-invite="${f.id}">${f.invited.length ? 'Reenviar invitación' : 'Invitar a vecinos'}</button>
             <button class="btn btn-ghost btn-sm" data-cancel="${f.id}">Cancelar faena</button>`;
+        }
+        if (f.invited.length) {
+          botones += `<button class="btn btn-ghost btn-sm" data-invitados="${f.id}">Ver invitados</button>`;
         }
         if (!f.cancelled && esElDia) {
           botones += `<button class="btn btn-primary btn-sm" data-att="${f.id}">${f.attendanceSaved ? 'Ver asistencia' : 'Registrar asistencia'}</button>`;
         }
 
+        const confirmados = f.invited.length
+          ? f.inscritos.length + ' confirmado(s) de ' + f.invited.length + ' invitado(s)'
+          : f.inscritos.length + ' inscrito(s), aún sin invitar';
+
         return `<li class="item item--col">
           <div><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)} ${estado}<br>
             <span class="text-muted">${esc(f.desc)}</span><br>
-            <span class="text-muted">Inscritos: ${f.inscritos.length}${f.invited ? ' de ' + f.invited + ' invitados' : ''}. Junta aporta: ${esc(f.insumosJunta || '-')}. Vecinos traen: ${esc(f.insumosVecinos || '-')}</span>
+            <span class="status-text">${confirmados} - ${f.cupos} cupos</span><br>
+            <span class="text-muted">Junta aporta: ${esc(f.insumosJunta || '-')}. Vecinos traen: ${esc(f.insumosVecinos || '-')}</span>
           </div>
           <div class="form-actions">${botones}</div>
         </li>`;
@@ -172,38 +190,62 @@ EV.views.dirigente = (function () {
     root.addEventListener('click', e => {
       const b = e.target.closest('button');
       if (!b) return;
-      const buscar = id => S.s.faenas.find(x => x.id === id);
-
       if (b.dataset.edit) editar(buscar(b.dataset.edit));
-
-      if (b.dataset.cancel) {
-        const f = buscar(b.dataset.cancel);
-        EV.ui.confirmar('¿Cancelar la faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + '? Se avisará a los inscritos.', 'Sí, cancelar faena', () => {
-          f.cancelled = true;
-          if (f.inscritos.some(i => i.id === S.USER)) {
-            S.notify('vecino', 'La faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + ' fue cancelada.', f.id);
-          }
-          S.save();
-          EV.ui.toast('Faena cancelada.', 'info');
-        });
-      }
-
-      // HU-34 Invitar vecinos a una faena
-      if (b.dataset.invite) {
-        const f = buscar(b.dataset.invite);
-        f.invited = 40;
-        S.notify('vecino', f.organizerName + ' te invita a la faena del ' + U.fmtDate(U.startOf(f)) + ' (' + f.time + ') en ' + f.place + '.', f.id);
-        S.save();
-        EV.ui.toast('Invitación enviada a los 40 vecinos registrados de tu zona.', 'success');
-      }
-
+      if (b.dataset.cancel) cancelarFaena(buscar(b.dataset.cancel));
+      if (b.dataset.invite) invitar(buscar(b.dataset.invite));
+      if (b.dataset.invitados) verInvitados(buscar(b.dataset.invitados));
       if (b.dataset.att) asistencia(buscar(b.dataset.att));
     });
+
+    function cancelarFaena(f) {
+      EV.ui.confirmar('¿Cancelar la faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + '? Se avisará a los inscritos.', 'Sí, cancelar faena', () => {
+        f.cancelled = true;
+        if (f.inscritos.some(i => i.id === S.USER)) {
+          S.notify('vecino', 'La faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + ' fue cancelada.', f.id);
+        }
+        S.save();
+        EV.ui.toast('Faena cancelada.', 'info');
+      });
+    }
+
+    // HU-34 Invitar a los vecinos registrados de la zona y ver cuántos confirmaron
+    function invitar(f) {
+      const zona = S.zoneById(f.zone);
+      const vecinos = S.vecinosDeZona(f.zone);
+      if (!vecinos.length) {
+        EV.ui.toast('No hay vecinos registrados en ' + zona.name + '.', 'warn');
+        return;
+      }
+      f.invited = vecinos.map(v => v.id);
+      if (f.invited.includes(S.USER)) {
+        S.notify('vecino', f.organizerName + ' te invita a la faena del ' + U.fmtDate(U.startOf(f)) + ' (' + f.time + ') en ' + f.place + '. ' + f.desc, f.id);
+      }
+      S.save();
+      EV.ui.toast('Invitación enviada a los ' + vecinos.length + ' vecinos registrados de ' + zona.name + '.', 'success');
+    }
+
+    function verInvitados(f) {
+      const body = EV.ui.openDialog('Invitados - ' + f.place, '');
+      function dibujar() {
+        const actual = buscar(f.id);
+        const filas = actual.invited.map(id => {
+          const v = S.vecinoById(id);
+          const confirmo = actual.inscritos.some(i => i.id === id);
+          return `<li class="fila-invitado"><span>${esc(v ? v.name : id)}</span>
+            ${confirmo ? '<span class="badge badge--resolved">Confirmó</span>' : '<span class="badge badge--neutral">Invitado</span>'}</li>`;
+        }).join('');
+        const confirmados = actual.invited.filter(id => actual.inscritos.some(i => i.id === id)).length;
+        body.innerHTML = `<p class="status-text">${confirmados} de ${actual.invited.length} vecinos confirmaron su asistencia.</p>
+          <ul class="plain-list">${filas}</ul>`;
+      }
+      EV.ui.currentDetail = dibujar;
+      dibujar();
+    }
 
     // HU-36 Registrar asistencia a la faena
     function asistencia(f) {
       const body = EV.ui.openDialog('Asistencia - ' + f.place, '');
-      function d() {
+      function dibujar() {
         if (!f.inscritos.length) {
           body.innerHTML = '<p class="empty">Nadie se inscribió a esta faena.</p>';
           return;
@@ -219,9 +261,8 @@ EV.views.dirigente = (function () {
         }
         body.innerHTML = `<form id="af"><ul class="plain-list">${lista}</ul>${pie}</form>`;
 
-        const form = body.querySelector('#af');
         if (!f.attendanceSaved) {
-          form.addEventListener('submit', e => {
+          body.querySelector('#af').addEventListener('submit', e => {
             e.preventDefault();
             f.inscritos.forEach((i, k) => {
               i.attended = body.querySelector('#a' + k).checked;
@@ -233,11 +274,11 @@ EV.views.dirigente = (function () {
             f.attendanceSaved = true;
             S.save();
             EV.ui.toast('Asistencia guardada en el historial de la faena.', 'success');
-            d();
+            dibujar();
           });
         }
       }
-      d();
+      dibujar();
     }
 
     draw();
@@ -270,9 +311,8 @@ EV.views.dirigente = (function () {
         return;
       }
       if (!setError(root, 'eEv', desc ? '' : 'Agrega una breve descripción del punto.')) return;
-      const zona = S.ZONES.find(z => S.s.settings.zoneJunta[z.id] === JID) || S.ZONES[0];
       S.s.casos.push({
-        id: S.nextId('CAS', 'cas'), juntaId: JID, zone: zona.id, createdAt: Date.now(), desc: desc, phase: 0,
+        id: S.nextId('CAS', 'cas'), juntaId: JID, zone: zonaDeLaJunta().id, createdAt: Date.now(), desc: desc, phase: 0,
         evidence: [{ photo: foto, desc: desc }], actions: [], escalated: false, reportId: null
       });
       if (S.save()) {
@@ -357,34 +397,36 @@ EV.views.dirigente = (function () {
     root.addEventListener('click', e => {
       const b = e.target.closest('button');
       if (!b) return;
-      if (b.dataset.next) {
-        const c = S.s.casos.find(x => x.id === b.dataset.next);
-        if (!c.actions.some(a => a.phase === c.phase)) {
-          EV.ui.toast('Registra al menos una acción de la fase actual.', 'error');
-          return;
-        }
-        c.phase++;
-        S.save();
-        EV.ui.toast('Avanzaste a "' + S.FASES[c.phase] + '".', 'success');
-      }
-      if (b.dataset.esc) {
-        const c = S.s.casos.find(x => x.id === b.dataset.esc);
-        if (c.phase !== S.FASES.length - 1) return;
-        const ev = c.evidence[0];
-        const zona = S.zoneById(c.zone);
-        const r = {
-          id: S.nextId('REP', 'rep'), createdAt: Date.now(), zone: c.zone, lat: ev.photo.lat, lng: ev.photo.lng, tipo: null, tamano: null,
-          reserved: false, reporterId: 'junta-' + JID, source: 'junta', status: 'pending', photo: ev.photo, supporters: [], thread: [],
-          after: null, override: null, closedAt: null, closedBy: null
-        };
-        S.s.reports.push(r);
-        c.escalated = true;
-        c.reportId = r.id;
-        S.notify('municipal', 'La ' + junta().name + ' escaló el caso ' + c.id + ' como reporte ' + r.id + ' (' + zona.name + ').', r.id);
-        S.save();
-        EV.ui.toast('Caso escalado al municipio como ' + r.id + '.', 'success');
-      }
+      if (b.dataset.next) avanzarFase(S.s.casos.find(x => x.id === b.dataset.next));
+      if (b.dataset.esc) escalar(S.s.casos.find(x => x.id === b.dataset.esc));
     });
+
+    function avanzarFase(c) {
+      if (!c.actions.some(a => a.phase === c.phase)) {
+        EV.ui.toast('Registra al menos una acción de la fase actual.', 'error');
+        return;
+      }
+      c.phase++;
+      S.save();
+      EV.ui.toast('Avanzaste a "' + S.FASES[c.phase] + '".', 'success');
+    }
+
+    function escalar(c) {
+      if (c.phase !== S.FASES.length - 1) return;
+      const ev = c.evidence[0];
+      const zona = S.zoneById(c.zone);
+      const r = {
+        id: S.nextId('REP', 'rep'), createdAt: Date.now(), zone: c.zone, lat: ev.photo.lat, lng: ev.photo.lng, tipo: null, tamano: null,
+        reserved: false, reporterId: 'junta-' + JID, source: 'junta', status: 'pending', photo: ev.photo, supporters: [], thread: [],
+        after: null, override: null, closedAt: null, closedBy: null
+      };
+      S.s.reports.push(r);
+      c.escalated = true;
+      c.reportId = r.id;
+      S.notify('municipal', 'La ' + junta().name + ' escaló el caso ' + c.id + ' como reporte ' + r.id + ' (' + zona.name + ').', r.id);
+      S.save();
+      EV.ui.toast('Caso escalado al municipio como ' + r.id + '.', 'success');
+    }
 
     draw();
     return { refresh: draw, destroy: () => cam.destroy() };
@@ -430,7 +472,7 @@ EV.views.dirigente = (function () {
 
   function abrirComentarios(id) {
     const body = EV.ui.openDialog('Comentarios - ' + id, '');
-    function d() {
+    function dibujar() {
       const r = S.s.reports.find(x => x.id === id);
       let hilo = '<p class="text-muted">Sin comentarios todavía.</p>';
       if (r.thread.length) {
@@ -454,8 +496,8 @@ EV.views.dirigente = (function () {
         EV.ui.toast('Comentario enviado.', 'success');
       });
     }
-    EV.ui.currentDetail = d;
-    d();
+    EV.ui.currentDetail = dibujar;
+    dibujar();
   }
 
   // HU-43 Ver estado de solicitudes y HU-44 Notificar solicitud sin respuesta
@@ -483,6 +525,8 @@ EV.views.dirigente = (function () {
       </div>
       <div class="card"><h2>Mis solicitudes</h2><div id="sl" aria-live="polite"></div></div>`;
 
+    // Lógica de nueva solicitud y tiempos límite
+
     root.querySelector('#sf').addEventListener('submit', e => {
       e.preventDefault();
       const asunto = root.querySelector('#sAsunto').value.trim();
@@ -490,7 +534,7 @@ EV.views.dirigente = (function () {
       if (!setError(root, 'eAs', asunto ? '' : 'Indica el asunto de la solicitud.')) return;
       const s = {
         id: S.nextId('SOL', 'sol'), juntaId: JID, tipo: root.querySelector('#sTipo').value, asunto: asunto,
-        createdAt: Date.now(), status: 'enviada', lastChange: Date.now(), zone: 'z1', reminders: 0, thread: []
+        createdAt: Date.now(), status: 'enviada', lastChange: Date.now(), zone: zonaDeLaJunta().id, reminders: 0, thread: []
       };
       if (mensaje) S.addMessage(s.thread, 'dirigente', mensaje);
       S.s.solicitudes.push(s);
@@ -553,7 +597,7 @@ EV.views.dirigente = (function () {
   // HU-47 Responder dentro del hilo
   function abrirHilo(id) {
     const body = EV.ui.openDialog('Solicitud ' + id, '');
-    function d() {
+    function dibujar() {
       const s = S.s.solicitudes.find(x => x.id === id);
       const mensajes = s.thread.slice().sort((a, b) => a.ts - b.ts);
       let hilo = '<p class="text-muted">Sin mensajes.</p>';
@@ -578,8 +622,8 @@ EV.views.dirigente = (function () {
         S.save();
       });
     }
-    EV.ui.currentDetail = d;
-    d();
+    EV.ui.currentDetail = dibujar;
+    dibujar();
   }
 
   return {

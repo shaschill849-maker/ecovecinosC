@@ -1,5 +1,5 @@
 EV.store = (function () {
-  const KEY = 'ecovecinos.v3';
+  const KEY = 'ecovecinos.v4';
 
   const ZONES = [
     { id: 'z1', name: 'Cercado - Barrios Altos', lat: -12.0464, lng: -77.0306, density: 3 },
@@ -12,6 +12,22 @@ EV.store = (function () {
     { id: 'j3', name: 'Junta Vecinal Gamarra' }
   ];
   const MUNI = 'Municipalidad (demo)';
+  const USER = 'vecino-demo';
+  const VECINOS = [
+    { id: USER, name: 'Tú (vecino demo)', zone: 'z1' },
+    { id: 'v-rosa', name: 'Rosa M.', zone: 'z1' },
+    { id: 'v-carlos', name: 'Carlos P.', zone: 'z1' },
+    { id: 'v-lucila', name: 'Lucila H.', zone: 'z1' },
+    { id: 'v-jorge', name: 'Jorge R.', zone: 'z1' },
+    { id: 'v-marta', name: 'Marta S.', zone: 'z1' },
+    { id: 'v-luis', name: 'Luis C.', zone: 'z1' },
+    { id: 'v-elena', name: 'Elena V.', zone: 'z1' },
+    { id: 'v-ana', name: 'Ana T.', zone: 'z2' },
+    { id: 'v-raul', name: 'Raúl G.', zone: 'z2' },
+    { id: 'v-nora', name: 'Nora B.', zone: 'z2' },
+    { id: 'v-irma', name: 'Irma F.', zone: 'z3' },
+    { id: 'v-oscar', name: 'Óscar N.', zone: 'z3' }
+  ];
   const TIPOS = {
     domiciliario: { label: 'Residuos domiciliarios', risk: 2 },
     desmonte: { label: 'Desmonte o escombros', risk: 1 },
@@ -27,7 +43,6 @@ EV.store = (function () {
   const SOL_TIPOS = { limpieza: 'Limpieza de punto crítico', carteleria: 'Cartelería o señalización', otro: 'Otro' };
   const SOL_ESTADOS = { enviada: 'Enviada', revision: 'En revisión', atendida: 'Atendida' };
   const CLUSTER_RADIUS = 50;
-  const USER = 'vecino-demo';
 
   let state = load();
 
@@ -59,6 +74,12 @@ EV.store = (function () {
     }
   });
 
+  function reset() {
+    localStorage.removeItem(KEY);
+    state = seed();
+    save();
+  }
+
   function nextId(prefijo, clave) {
     state.seq[clave] = (state.seq[clave] || 0) + 1;
     return prefijo + '-' + String(state.seq[clave]).padStart(4, '0');
@@ -75,6 +96,8 @@ EV.store = (function () {
       id: 'REP-' + String(n).padStart(4, '0'), source: 'vecino', reserved: false, reporterId: 'otro', supporters: [],
       thread: [], after: null, override: null, closedAt: null, closedBy: null, tipo: null, tamano: null
     }, datos);
+    const inscrito = id => ({ id: id, name: VECINOS.find(v => v.id === id).name, attended: null });
+    const deZona = zona => VECINOS.filter(v => v.zone === zona).map(v => v.id);
 
     const reports = [
       reporte(1, {
@@ -114,37 +137,33 @@ EV.store = (function () {
 
     const ymd = EV.util.isoFromOffset;
     const pronto = new Date(now + 10 * HORA);
-    const yo = { id: USER, name: 'Tú (vecino demo)', attended: null };
 
     const faenas = [
       {
         id: 'FAE-0001', organizer: 'junta', organizerName: 'Junta Vecinal Barrios Altos', juntaId: 'j1', zone: 'z1', date: ymd(-3), time: '08:00',
         place: 'Jr. Ancash cdra. 4', lat: -12.0460, lng: -77.0300, desc: 'Limpieza del punto crítico junto al mercado.', implementos: true,
-        insumosJunta: 'Guantes y bolsas', insumosVecinos: 'Escobas y agua', cancelled: false, invited: 40, attendanceSaved: false,
-        inscritos: [
-          { id: 'v-rosa', name: 'Rosa M.', attended: null },
-          { id: 'v-carlos', name: 'Carlos P.', attended: null },
-          { id: 'v-lucila', name: 'Lucila H.', attended: null },
-          Object.assign({}, yo)
-        ]
+        insumosJunta: 'Guantes y bolsas', insumosVecinos: 'Escobas y agua', cupos: 20, cancelled: false, attendanceSaved: false,
+        invited: deZona('z1'),
+        inscritos: [inscrito('v-rosa'), inscrito('v-carlos'), inscrito('v-lucila'), inscrito(USER)]
       },
       {
         id: 'FAE-0002', organizer: 'municipio', organizerName: MUNI, juntaId: null, zone: 'z2', date: ymd(4), time: '09:00',
         place: 'Alameda Los Descalzos', lat: -12.0300, lng: -77.0400, desc: 'Faena municipal con apoyo de la cuadrilla.', implementos: true,
-        insumosJunta: 'Guantes, bolsas y mascarillas', insumosVecinos: '', cancelled: false, invited: 0, attendanceSaved: false,
-        inscritos: [{ id: 'v-ana', name: 'Ana T.', attended: null }]
+        insumosJunta: 'Guantes, bolsas y mascarillas', insumosVecinos: '', cupos: 30, cancelled: false, attendanceSaved: false,
+        invited: [], inscritos: [inscrito('v-ana')]
       },
       {
         id: 'FAE-0003', organizer: 'junta', organizerName: 'Junta Vecinal Barrios Altos', juntaId: 'j1', zone: 'z1', date: ymd(9), time: '07:30',
         place: 'Parque Neptuno', lat: -12.0455, lng: -77.0320, desc: 'Jornada de limpieza y pintado de muros.', implementos: false,
-        insumosJunta: 'Bolsas', insumosVecinos: 'Guantes, escobas y recogedores', cancelled: false, invited: 0, attendanceSaved: false, inscritos: []
+        insumosJunta: 'Bolsas', insumosVecinos: 'Guantes, escobas y recogedores', cupos: 15, cancelled: false, attendanceSaved: false,
+        invited: [], inscritos: []
       },
       {
         id: 'FAE-0004', organizer: 'junta', organizerName: 'Junta Vecinal Barrios Altos', juntaId: 'j1', zone: 'z1',
         date: EV.util.fechaISO(pronto), time: EV.util.horaTexto(pronto),
         place: 'Pasaje Huanta', lat: -12.0472, lng: -77.0295, desc: 'Recojo de desmonte en el pasaje.', implementos: true,
-        insumosJunta: 'Bolsas y guantes', insumosVecinos: 'Recogedores', cancelled: false, invited: 0, attendanceSaved: false,
-        inscritos: [Object.assign({}, yo)]
+        insumosJunta: 'Bolsas y guantes', insumosVecinos: 'Recogedores', cupos: 10, cancelled: false, attendanceSaved: false,
+        invited: [], inscritos: [inscrito(USER)]
       }
     ];
 
@@ -185,6 +204,7 @@ EV.store = (function () {
         requestHours: { limpieza: 48, carteleria: 72, otro: 96 },
         zoneJunta: { z1: 'j1', z2: 'j2', z3: 'j3' },
         geoConsent: false,
+        geoPermitido: false,
         points: {}
       },
       filters: { zona: 'all', desde: '', hasta: '', estado: 'all', orden: 'prioridad' }
@@ -196,12 +216,18 @@ EV.store = (function () {
       id: nextId('NOT', 'not'), to: para, text: texto, ts: Date.now(), read: false,
       ref: ref || null, photo: foto || null, tipo: tipo || null
     });
-    state.notifications = state.notifications.slice(0, 60);
+    state.notifications = state.notifications.slice(0, 150);
   }
 
   function quitarAvisos(tipo, ref) {
     state.notifications = state.notifications.filter(n => !(n.tipo === tipo && (!ref || n.ref === ref)));
   }
+
+  function addMessage(lista, de, texto) {
+    lista.push({ id: nextId('MSG', 'msg'), from: de, text: texto, ts: Date.now() });
+  }
+
+  // Lógica de zonas, juntas y vecinos
 
   // HU-02 Derivar el reporte a la zona según el GPS
   function zoneFor(lat, lng) {
@@ -227,6 +253,20 @@ EV.store = (function () {
 
   function juntaOfZone(idZona) {
     return juntaById(state.settings.zoneJunta[idZona]);
+  }
+
+  // HU-34 Vecinos registrados en una zona
+  function vecinosDeZona(idZona) {
+    return VECINOS.filter(v => v.zone === idZona);
+  }
+
+  function vecinoById(id) {
+    return VECINOS.find(v => v.id === id);
+  }
+
+  // HU-29 Compartir estado con la junta
+  function reportsOfJunta(idJunta) {
+    return state.reports.filter(r => state.settings.zoneJunta[r.zone] === idJunta);
   }
 
   // HU-22 Agrupar reportes de un mismo punto
@@ -292,25 +332,11 @@ EV.store = (function () {
     return s.status !== 'atendida' && EV.util.hoursSince(s.lastChange) > state.settings.requestHours[s.tipo];
   }
 
-  function addMessage(lista, de, texto) {
-    lista.push({ id: nextId('MSG', 'msg'), from: de, text: texto, ts: Date.now() });
-  }
-
-  function reset() {
-    localStorage.removeItem(KEY);
-    state = seed();
-    save();
-  }
-
-  // HU-29 Compartir estado con la junta
-  function reportsOfJunta(idJunta) {
-    return state.reports.filter(r => state.settings.zoneJunta[r.zone] === idJunta);
-  }
-
   return {
-    ZONES, JUNTAS, MUNI, TIPOS, TAMANOS, FASES, SOL_TIPOS, SOL_ESTADOS, CLUSTER_RADIUS, USER,
+    ZONES, JUNTAS, MUNI, TIPOS, TAMANOS, FASES, SOL_TIPOS, SOL_ESTADOS, USER,
     get s() { return state; },
-    save, nextId, notify, quitarAvisos, zoneFor, zoneById, juntaById, juntaOfZone, clusters,
-    priority, isOverdue, overdueSolicitud, addMessage, reset, reportsOfJunta
+    save, reset, nextId, notify, quitarAvisos, addMessage,
+    zoneFor, zoneById, juntaById, juntaOfZone, vecinosDeZona, vecinoById, reportsOfJunta,
+    clusters, priority, isOverdue, overdueSolicitud
   };
 })();

@@ -7,6 +7,18 @@ EV.views.vecino = (function () {
   const me = () => S.USER;
   const FROM = { vecino: 'Tú', municipal: 'Municipalidad', dirigente: 'Junta vecinal' };
 
+  function vistos() {
+    if (!S.s.settings.vistos) {
+      S.s.settings.vistos = {};
+      S.s.reports.forEach(r => { S.s.settings.vistos[r.id] = r.status; });
+    }
+    return S.s.settings.vistos;
+  }
+
+  function marcarVisto(r) {
+    vistos()[r.id] = r.status;
+  }
+
   // HU-06 Ver estado del reporte y HU-10 Comentar un reporte enviado
   function openDetail(id) {
     const r0 = S.s.reports.find(x => x.id === id);
@@ -79,7 +91,7 @@ EV.views.vecino = (function () {
     draw();
   }
 
-  function reportar(root) {
+  function reportar(root, opciones) {
     let step = 1;
     let photo = null;
     let pin = null;
@@ -87,6 +99,7 @@ EV.views.vecino = (function () {
     let mapCtl = null;
     let created = null;
     let dismissed = false;
+    let abrirCamara = Boolean(opciones && opciones.porUsuario);
     const draft = { tipo: '', tamano: '', reserved: false, radius: 250 };
 
     function pasosHtml() {
@@ -104,6 +117,14 @@ EV.views.vecino = (function () {
       }).join('') + '</ol>';
     }
 
+    function llenarLinea() {
+      const linea = root.querySelector('[data-llenar]');
+      if (!linea) return;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        linea.style.width = '100%';
+      }));
+    }
+
     function cleanup() {
       if (cam) cam.destroy();
       if (mapCtl) mapCtl.destroy();
@@ -111,33 +132,45 @@ EV.views.vecino = (function () {
       mapCtl = null;
     }
 
+    function irAlPaso(numero) {
+      step = numero;
+      draw();
+    }
+
     function draw() {
       cleanup();
       if (step === 1) step1();
       else if (step === 2) step2();
       else step3();
-      const linea = root.querySelector('[data-llenar]');
-      if (linea) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          linea.style.width = '100%';
-        }));
-      }
+      llenarLinea();
     }
 
-    // HU-01 Capturar foto desde cámara
+    // HU-01 Capturar foto desde cámara y HU-02 pedir la ubicación al iniciar el reporte
     function step1() {
       photo = null;
+      pin = null;
+      const primeraVez = !S.s.settings.geoConsent;
+
       root.innerHTML = `<div class="card card--paso">${pasosHtml()}
         <div class="paso-intro">
           <h2>Toma la foto del foco de basura</h2>
           <p class="text-muted">Se toma con la cámara en el momento para que la evidencia sea real y reciente. La foto guarda la fecha, la hora y la ubicación.</p>
         </div>
+        ${primeraVez ? `<div class="notice" id="geoAviso" role="region" aria-label="Permiso de ubicación">
+          <h3>Usaremos tu ubicación</h3>
+          <p>La foto guardará dónde está el foco de basura para derivarlo a la municipalidad y a la junta de la zona. Si no la permites, podrás marcar el punto en el mapa en el siguiente paso.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="geoAllow">Permitir ubicación</button>
+            <button type="button" class="btn btn-secondary" id="geoDeny">Ahora no</button>
+          </div>
+        </div>` : ''}
         <div id="camBox"></div>
         <div class="paso-pie acciones-fijas">
           <p class="paso-aviso" id="hint1">Necesitas una foto para continuar.</p>
           <button type="button" class="btn btn-primary" id="next1" disabled>Continuar</button>
         </div>
       </div>`;
+
       cam = EV.camera.mount(root.querySelector('#camBox'), {
         onChange: p => {
           photo = p;
@@ -145,32 +178,41 @@ EV.views.vecino = (function () {
           root.querySelector('#hint1').textContent = p ? 'Foto lista. Ya puedes continuar.' : 'Necesitas una foto para continuar.';
         }
       });
-      root.querySelector('#next1').addEventListener('click', () => {
-        step = 2;
-        draw();
-      });
+      root.querySelector('#next1').addEventListener('click', () => irAlPaso(2));
+
+      if (primeraVez) {
+        root.querySelector('#geoAllow').addEventListener('click', () => responderUbicacion(true));
+        root.querySelector('#geoDeny').addEventListener('click', () => responderUbicacion(false));
+        return;
+      }
+      if (S.s.settings.geoPermitido) EV.geo.request();
+      if (abrirCamara) cam.abrir();
+    }
+
+    async function responderUbicacion(permitir) {
+      const aviso = root.querySelector('#geoAviso');
+      aviso.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      let ok = false;
+      if (permitir) {
+        ok = (await EV.geo.request()).ok;
+        if (ok) EV.ui.toast('Ubicación activada. Se adjuntará a la foto.', 'success');
+        else EV.ui.toast('No pudimos obtener tu ubicación. Podrás marcar el punto en el mapa.', 'warn');
+      }
+      S.s.settings.geoConsent = true;
+      S.s.settings.geoPermitido = ok;
+      S.save();
+      if (!root.contains(aviso)) return;
+      const camara = cam;
+      EV.ui.colapsar(aviso, () => { if (camara === cam && cam) cam.abrir(); });
     }
 
     // HU-02 Adjuntar ubicación GPS, HU-03 Enviar reporte rápido, HU-04 Ver reportes cercanos y HU-39 Reporte reservado
     function step2() {
-      const yaPregunto = S.s.settings.geoConsent;
-      if (!pin) pin = { lat: EV.geo.get().lat, lng: EV.geo.get().lng };
+      if (!pin) pin = { lat: photo.lat, lng: photo.lng };
 
-      let avisoPermiso = '';
-      if (!yaPregunto) {
-        avisoPermiso = `<div class="notice" role="region" aria-label="Permiso de ubicación">
-          <h3>Usaremos tu ubicación</h3>
-          <p>EcoVecinos usa tu ubicación solo para marcar dónde está el foco de basura y derivarlo a la municipalidad y a la junta de la zona. Si no la permites, puedes marcar el punto en el mapa.</p>
-          <div class="form-actions">
-            <button type="button" class="btn btn-primary" id="geoAllow">Permitir ubicación</button>
-            <button type="button" class="btn btn-secondary" id="geoDeny">Ahora no, marcaré el punto en el mapa</button>
-          </div>
-        </div>`;
-      }
-
-      const estadoUbicacion = EV.geo.get().exact
-        ? 'Ubicación GPS obtenida automáticamente.'
-        : 'Ubicación aproximada: mueve el pin si no es exacta.';
+      let estadoUbicacion = 'Ubicación aproximada: mueve el pin si no es exacta.';
+      if (EV.geo.get().exact) estadoUbicacion = 'Ubicación GPS adjuntada automáticamente al tomar la foto.';
+      else if (!S.s.settings.geoPermitido) estadoUbicacion = 'No activaste la ubicación: marca el punto en el mapa.';
 
       const opcionesTipo = Object.keys(S.TIPOS).map(k => `<option value="${k}">${S.TIPOS[k].label}</option>`).join('');
       const opcionesTamano = Object.keys(S.TAMANOS).map(k => `<option value="${k}">${S.TAMANOS[k].label}</option>`).join('');
@@ -180,7 +222,6 @@ EV.views.vecino = (function () {
           <h2>Confirma la ubicación y envía</h2>
           <p class="text-muted">Revisa que el pin esté sobre el foco de basura. El resto de datos es opcional.</p>
         </div>
-        ${avisoPermiso}
         ${EV.ui.avisoUbicacionDemo()}
         <p class="status-text" role="status">${estadoUbicacion}</p>
         <div id="pinMap" class="map map--sm" role="region" aria-label="Mapa para ajustar la ubicación del reporte"></div>
@@ -281,28 +322,6 @@ EV.views.vecino = (function () {
       }
       mostrarCercanos();
 
-      const permitir = $('#geoAllow');
-      if (permitir) {
-        permitir.addEventListener('click', async () => {
-          const resultado = await EV.geo.request();
-          S.s.settings.geoConsent = true;
-          S.save();
-          if (resultado.ok) {
-            const g = EV.geo.get();
-            pin = { lat: g.lat, lng: g.lng };
-            EV.ui.toast('Ubicación obtenida.', 'success');
-          } else {
-            EV.ui.toast('No pudimos obtener tu ubicación. Marca el punto en el mapa.', 'warn');
-          }
-          draw();
-        });
-        $('#geoDeny').addEventListener('click', () => {
-          S.s.settings.geoConsent = true;
-          S.save();
-          draw();
-        });
-      }
-
       const demo = root.querySelector('[data-ubicacion-demo]');
       if (demo) {
         demo.addEventListener('click', () => {
@@ -321,8 +340,8 @@ EV.views.vecino = (function () {
       $('#tamano').addEventListener('change', e => { draft.tamano = e.target.value; });
       $('#reserved').addEventListener('change', e => { draft.reserved = e.target.checked; });
       $('#back2').addEventListener('click', () => {
-        step = 1;
-        draw();
+        abrirCamara = true;
+        irAlPaso(1);
       });
       $('#send').addEventListener('click', enviar);
     }
@@ -335,16 +354,14 @@ EV.views.vecino = (function () {
       marcarVisto(r);
       S.save();
       created = { report: r, joined: true };
-      step = 3;
-      draw();
+      irAlPaso(3);
     }
 
     // HU-05 Confirmar reporte con código único
     function enviar() {
       if (!photo) {
         EV.ui.toast('Falta la foto del reporte.', 'error');
-        step = 1;
-        draw();
+        irAlPaso(1);
         return;
       }
       const zona = S.zoneFor(pin.lat, pin.lng);
@@ -362,8 +379,7 @@ EV.views.vecino = (function () {
         return;
       }
       created = { report: r, joined: false };
-      step = 3;
-      draw();
+      irAlPaso(3);
     }
 
     function step3() {
@@ -386,14 +402,12 @@ EV.views.vecino = (function () {
       </div>`;
       root.querySelector('#goMine').addEventListener('click', () => EV.app.goTab('mis'));
       root.querySelector('#again').addEventListener('click', () => {
-        step = 1;
-        photo = null;
-        pin = null;
         dismissed = false;
         draft.tipo = '';
         draft.tamano = '';
         draft.reserved = false;
-        draw();
+        abrirCamara = true;
+        irAlPaso(1);
       });
     }
 
@@ -462,6 +476,7 @@ EV.views.vecino = (function () {
     root.querySelector('#loc').addEventListener('click', async () => {
       const resultado = await EV.geo.request();
       S.s.settings.geoConsent = true;
+      S.s.settings.geoPermitido = resultado.ok;
       S.save();
       if (resultado.ok) EV.ui.toast('Ubicación actualizada.', 'success');
       else EV.ui.toast('No pudimos obtener tu ubicación, se usa la aproximada.', 'warn');
@@ -470,18 +485,6 @@ EV.views.vecino = (function () {
 
     draw();
     return { refresh: draw, destroy: () => { if (mapCtl) mapCtl.destroy(); } };
-  }
-
-  function vistos() {
-    if (!S.s.settings.vistos) {
-      S.s.settings.vistos = {};
-      S.s.reports.forEach(r => { S.s.settings.vistos[r.id] = r.status; });
-    }
-    return S.s.settings.vistos;
-  }
-
-  function marcarVisto(r) {
-    vistos()[r.id] = r.status;
   }
 
   // HU-08 Ver historial de reportes y HU-06 aviso de cambio de estado
@@ -551,7 +554,85 @@ EV.views.vecino = (function () {
     return { refresh: draw };
   }
 
-  // HU-11 Ver faenas programadas y HU-12 Inscribirse a una faena
+  const estoyInscrito = f => f.inscritos.some(i => i.id === me());
+  const puedeCancelar = f => U.startOf(f) - Date.now() >= 24 * HORA;
+  const cuposLibres = f => Math.max(0, f.cupos - f.inscritos.length);
+
+  function inscribirse(f) {
+    if (estoyInscrito(f) || !cuposLibres(f)) return;
+    f.inscritos.push({ id: me(), name: S.vecinoById(me()).name, attended: null });
+    S.notify('vecino', 'Inscripción confirmada: faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + '.', f.id);
+    if (f.juntaId) S.notify('dirigente', 'Un vecino se inscribió a la faena en ' + f.place + '.', f.id);
+    S.save();
+    EV.ui.toast('Inscripción confirmada. Se agregó a tu calendario.', 'success');
+  }
+
+  function cancelarInscripcion(f) {
+    if (!puedeCancelar(f)) {
+      EV.ui.toast('Ya no puedes cancelar: faltan menos de 24 horas.', 'error');
+      return;
+    }
+    EV.ui.confirmar('¿Cancelar tu inscripción a la faena en ' + f.place + '? Tu cupo quedará libre para otro vecino.', 'Sí, cancelar', () => {
+      f.inscritos = f.inscritos.filter(i => i.id !== me());
+      if (f.juntaId) S.notify('dirigente', 'Un vecino canceló su inscripción a la faena en ' + f.place + '.', f.id);
+      S.save();
+      EV.ui.toast('Inscripción cancelada. Tu cupo quedó libre.', 'info');
+    });
+  }
+
+  // HU-12 Inscribirse a una faena desde su detalle
+  function openFaena(id) {
+    const f0 = S.s.faenas.find(x => x.id === id);
+    const body = EV.ui.openDialog('Faena en ' + f0.place, '');
+
+    function draw() {
+      const f = S.s.faenas.find(x => x.id === id);
+      const inscrito = estoyInscrito(f);
+      const libres = cuposLibres(f);
+      const organiza = f.organizer === 'junta' ? 'Junta vecinal' : 'Municipio';
+
+      let insumos = '<p class="text-muted">Al inscribirte verás qué insumos debes llevar.</p>';
+      if (inscrito) {
+        insumos = `<div class="notice notice--soft"><strong>Qué llevar:</strong> ${f.insumosVecinos ? esc(f.insumosVecinos) : 'No necesitas llevar nada adicional.'}<br>
+          <span class="text-muted">La junta o el municipio aporta: ${esc(f.insumosJunta || '-')}</span></div>`;
+      }
+
+      let acciones = `<button type="button" class="btn btn-primary" data-enroll ${libres ? '' : 'disabled aria-describedby="sinCupo"'}>Inscribirme</button>
+        ${libres ? '' : '<span class="text-muted" id="sinCupo">Ya no quedan cupos en esta faena.</span>'}`;
+      if (inscrito && puedeCancelar(f)) {
+        acciones = '<button type="button" class="btn btn-secondary" data-cancel>Cancelar inscripción</button>';
+      } else if (inscrito) {
+        acciones = `<button type="button" class="btn btn-secondary" disabled aria-describedby="noCancela">Cancelar inscripción</button>
+          <span class="text-muted" id="noCancela">Solo puedes cancelar hasta 24 h antes del inicio.</span>`;
+      }
+
+      body.innerHTML = `
+        ${inscrito ? '<p class="badges"><span class="badge badge--resolved">Estás inscrito</span></p>' : ''}
+        <p>${esc(f.desc)}</p>
+        <dl class="dl">
+          <dt>Fecha</dt><dd>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</dd>
+          <dt>Lugar</dt><dd>${esc(f.place)} (${esc(S.zoneById(f.zone).name)})</dd>
+          <dt>Organiza</dt><dd>${esc(f.organizerName)} (${organiza})</dd>
+          <dt>Cupos</dt><dd>${libres} libre(s) de ${f.cupos}</dd>
+          <dt>Implementos</dt><dd>${f.implementos ? 'Garantizados (guantes y bolsas)' : 'Trae tus propios implementos'}</dd>
+        </dl>
+        ${insumos}
+        <div class="form-actions">${acciones}</div>`;
+
+      body.onclick = e => {
+        const b = e.target.closest('button');
+        if (!b || b.disabled) return;
+        const actual = S.s.faenas.find(x => x.id === id);
+        if (b.hasAttribute('data-enroll')) inscribirse(actual);
+        if (b.hasAttribute('data-cancel')) cancelarInscripcion(actual);
+      };
+    }
+
+    EV.ui.currentDetail = draw;
+    draw();
+  }
+
+  // HU-11 Ver faenas programadas y HU-12 calendario de faenas
   function faenas(root) {
     let distanciaMax = 0;
     root.innerHTML = `<div class="card">
@@ -569,7 +650,6 @@ EV.views.vecino = (function () {
       </div>
       <div class="card"><h2>Mi calendario</h2><div id="cal" aria-live="polite"></div></div>`;
 
-    const estoyInscrito = f => f.inscritos.some(i => i.id === me());
     const proximas = () => S.s.faenas
       .filter(f => !f.cancelled && U.startOf(f) >= Date.now())
       .sort((a, b) => U.startOf(a) - U.startOf(b));
@@ -585,35 +665,17 @@ EV.views.vecino = (function () {
       if (lista.length) {
         root.querySelector('#fList').innerHTML = '<ul class="item-list">' + lista.map(x => {
           const f = x.f;
-          const inscrito = estoyInscrito(f);
-          const puedeCancelar = U.startOf(f) - Date.now() >= 24 * HORA;
           const organiza = f.organizer === 'junta' ? 'junta vecinal' : 'municipio';
           const implementos = f.implementos
             ? '<span class="badge badge--resolved">Implementos garantizados (guantes y bolsas)</span>'
             : '<span class="badge badge--late">Trae tus propios implementos</span>';
-
-          let insumos = '<p class="text-muted">Inscríbete para ver qué insumos debes llevar.</p>';
-          if (inscrito) {
-            insumos = `<div class="notice notice--soft"><strong>Qué llevar:</strong> ${f.insumosVecinos ? esc(f.insumosVecinos) : 'No necesitas llevar nada adicional.'}<br>
-              <span class="text-muted">La junta o el municipio aporta: ${esc(f.insumosJunta || '-')}</span></div>`;
-          }
-
-          let boton = `<button class="btn btn-primary" data-enroll="${f.id}">Inscribirme</button>`;
-          if (inscrito && puedeCancelar) {
-            boton = `<button class="btn btn-secondary" data-cancel="${f.id}">Cancelar inscripción</button>`;
-          } else if (inscrito) {
-            boton = `<button class="btn btn-secondary" data-cancel="${f.id}" disabled aria-describedby="nc-${f.id}">Cancelar inscripción</button>
-              <span class="text-muted" id="nc-${f.id}">Solo puedes cancelar hasta 24 h antes.</span>`;
-          }
-
           return `<li class="item item--col">
-            <div><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)}<br>
-              <span class="text-muted">Organiza: ${esc(f.organizerName)} (${organiza}) - a ${U.fmtDist(x.d)} - ${f.inscritos.length} inscrito(s)</span><br>
+            <div><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)}
+              ${estoyInscrito(f) ? '<span class="badge badge--info">Inscrito</span>' : ''}<br>
+              <span class="text-muted">Organiza: ${esc(f.organizerName)} (${organiza}) - a ${U.fmtDist(x.d)} - ${cuposLibres(f)} cupo(s) libre(s)</span><br>
               ${implementos}
             </div>
-            <p>${esc(f.desc)}</p>
-            ${insumos}
-            <div class="form-actions">${boton}</div>
+            <div class="form-actions"><button class="btn btn-secondary btn-sm" data-faena="${f.id}">Ver detalle</button></div>
           </li>`;
         }).join('') + '</ul>';
       } else {
@@ -623,7 +685,8 @@ EV.views.vecino = (function () {
       const misFaenas = proximas().filter(estoyInscrito);
       if (misFaenas.length) {
         root.querySelector('#cal').innerHTML = '<ul class="plain-list">' + misFaenas.map(f =>
-          `<li><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)}</li>`
+          `<li><strong>${U.fmtDate(U.startOf(f))}, ${esc(f.time)}</strong> - ${esc(f.place)}
+            <button type="button" class="btn btn-ghost btn-sm" data-faena="${f.id}">Ver detalle</button></li>`
         ).join('') + '</ul>';
       } else {
         root.querySelector('#cal').innerHTML = '<p class="empty">Aún no te inscribiste a ninguna faena.</p>';
@@ -631,26 +694,8 @@ EV.views.vecino = (function () {
     }
 
     root.addEventListener('click', e => {
-      const inscribir = e.target.closest('[data-enroll]');
-      const cancelar = e.target.closest('[data-cancel]');
-      if (inscribir) {
-        const f = S.s.faenas.find(x => x.id === inscribir.dataset.enroll);
-        f.inscritos.push({ id: me(), name: 'Tú (vecino demo)', attended: null });
-        S.notify('vecino', 'Inscripción confirmada: faena del ' + U.fmtDate(U.startOf(f)) + ' en ' + f.place + '.', f.id);
-        if (f.juntaId) S.notify('dirigente', 'Un vecino se inscribió a la faena en ' + f.place + '.', f.id);
-        S.save();
-        EV.ui.toast('Inscripción confirmada. Se agregó a tu calendario.', 'success');
-      }
-      if (cancelar) {
-        const f = S.s.faenas.find(x => x.id === cancelar.dataset.cancel);
-        if (U.startOf(f) - Date.now() < 24 * HORA) {
-          EV.ui.toast('Ya no puedes cancelar: faltan menos de 24 horas.', 'error');
-          return;
-        }
-        f.inscritos = f.inscritos.filter(i => i.id !== me());
-        S.save();
-        EV.ui.toast('Inscripción cancelada.', 'info');
-      }
+      const b = e.target.closest('[data-faena]');
+      if (b) openFaena(b.dataset.faena);
     });
     root.querySelector('#near').addEventListener('change', e => {
       distanciaMax = Number(e.target.value);

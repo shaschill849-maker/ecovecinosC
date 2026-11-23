@@ -27,7 +27,7 @@ EV.app = (function () {
     EV.camera.stopAll();
   }
 
-  function selectTab(id, conFoco) {
+  function selectTab(id, conFoco, porUsuario) {
     cerrarVista();
     document.querySelectorAll('#tablist .tab').forEach(b => {
       const activa = b.dataset.tab === id;
@@ -42,8 +42,13 @@ EV.app = (function () {
     vista.className = 'view entrando';
     panel.appendChild(vista);
     const tab = tabsDe(role).find(t => t.id === id);
-    current = tab.render(vista) || {};
+    current = tab.render(vista, { porUsuario: Boolean(porUsuario) }) || {};
     setTimeout(() => vista.classList.remove('entrando'), 700);
+  }
+
+  function goTab(id) {
+    selectTab(id, true, true);
+    window.scrollTo({ top: $('demo').offsetTop - 10, behavior: 'smooth' });
   }
 
   function marcarRol() {
@@ -64,9 +69,10 @@ EV.app = (function () {
     updateBell();
   }
 
-  function goTab(id) {
-    selectTab(id, true);
-    window.scrollTo({ top: $('demo').offsetTop - 10, behavior: 'smooth' });
+  function irA(destino) {
+    const partes = destino.split(':');
+    if (partes[0] !== role) setRole(partes[0]);
+    goTab(partes[1]);
   }
 
   function misNotificaciones() {
@@ -140,64 +146,6 @@ EV.app = (function () {
     elementos.forEach(el => observador.observe(el));
   }
 
-  function irA(destino) {
-    const partes = destino.split(':');
-    if (partes[0] !== role) setRole(partes[0]);
-    goTab(partes[1]);
-  }
-
-  function cerrarSplash() {
-    const splash = $('splash');
-    if (!splash) {
-      mostrarPagina();
-      return;
-    }
-    try { sessionStorage.setItem('ecovecinos.splash', 'si'); } catch (e) { }
-
-    const logo = splash.querySelector('.splash-logo');
-    const marca = document.querySelector('.brand');
-    let terminado = false;
-
-    function terminar() {
-      if (terminado) return;
-      terminado = true;
-      marca.style.opacity = '';
-      splash.remove();
-      mostrarPagina();
-    }
-
-    function animar() {
-      splash.onclick = null;
-      document.removeEventListener('keydown', saltar);
-      const desde = logo.getBoundingClientRect();
-      const hasta = marca.getBoundingClientRect();
-      const escala = hasta.height / desde.height;
-      const dx = (hasta.left + hasta.width / 2) - (desde.left + desde.width / 2);
-      const dy = (hasta.top + hasta.height / 2) - (desde.top + desde.height / 2);
-      marca.style.opacity = '0';
-      logo.animate(
-        [{ transform: 'none' }, { transform: `translate(${dx}px, ${dy}px) scale(${escala})` }],
-        { duration: 500, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', fill: 'forwards' }
-      );
-      splash.querySelector('.splash-hint').remove();
-      const fondo = splash.animate(
-        [{ backgroundColor: 'rgba(30, 91, 58, 1)' }, { backgroundColor: 'rgba(30, 91, 58, 0)' }],
-        { duration: 250, delay: 420, fill: 'forwards' }
-      );
-      fondo.onfinish = terminar;
-      setTimeout(terminar, 1200);
-    }
-
-    function saltar() {
-      clearTimeout(espera);
-      animar();
-    }
-
-    const espera = setTimeout(animar, 350);
-    splash.onclick = saltar;
-    document.addEventListener('keydown', saltar, { once: true });
-  }
-
   function init() {
     document.querySelectorAll('[data-role]').forEach(b => {
       b.addEventListener('click', () => {
@@ -210,13 +158,14 @@ EV.app = (function () {
         irA(enlace.dataset.ir);
       });
     });
+
     $('bell').addEventListener('click', abrirNotificaciones);
     $('bell').addEventListener('animationend', e => {
       if (e.animationName === 'campana') $('bell').classList.remove('bell--nueva');
       if (e.animationName === 'pop') $('bellCount').classList.remove('bell-count--pop');
     });
-    $('dialogClose').addEventListener('click', EV.ui.closeDialog);
 
+    $('dialogClose').addEventListener('click', EV.ui.closeDialog);
     const dlg = $('dialog');
     dlg.addEventListener('close', () => {
       EV.ui.currentDetail = null;
@@ -224,7 +173,6 @@ EV.app = (function () {
         EV.ui.currentCleanup();
         EV.ui.currentCleanup = null;
       }
-      if (dlg._onClose) dlg._onClose();
     });
     dlg.addEventListener('click', e => {
       if (e.target === dlg) EV.ui.closeDialog();
@@ -233,7 +181,7 @@ EV.app = (function () {
     const tabs = $('tablist');
     tabs.addEventListener('click', e => {
       const b = e.target.closest('[data-tab]');
-      if (b) selectTab(b.dataset.tab);
+      if (b) selectTab(b.dataset.tab, false, true);
     });
     tabs.addEventListener('keydown', e => {
       const lista = Array.from(tabs.querySelectorAll('.tab'));
@@ -246,7 +194,7 @@ EV.app = (function () {
       else if (e.key === 'End') siguiente = lista.length - 1;
       if (siguiente !== null) {
         e.preventDefault();
-        selectTab(lista[siguiente].dataset.tab, true);
+        selectTab(lista[siguiente].dataset.tab, true, true);
       }
     });
 
@@ -285,9 +233,9 @@ EV.app = (function () {
     observador.observe(document.body, { childList: true, subtree: true });
 
     setRole(role);
-    cerrarSplash();
+    mostrarPagina();
   }
 
   document.addEventListener('DOMContentLoaded', init);
-  return { goTab, setRole };
+  return { goTab };
 })();

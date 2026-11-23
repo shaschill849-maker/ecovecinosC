@@ -15,11 +15,28 @@ EV.views.municipal = (function () {
     S.save();
   }
 
+  function miembros(r) {
+    const grupo = S.clusters()[r.id];
+    return grupo ? grupo.members : [r];
+  }
+
+  function avisarVecino(lista, texto, foto) {
+    const esDelVecino = lista.some(m => m.reporterId === S.USER || m.supporters.includes(S.USER));
+    if (esDelVecino) S.notify('vecino', texto, lista[0].id, foto);
+  }
+
+  function necesitaFoto(r) {
+    return r.status !== 'resolved' && (!r.after || r.after.status === 'rejected');
+  }
+
+  function ubicacionDespues(r) {
+    const foto = r.after.photo;
+    return U.fmtCoords(foto.lat, foto.lng) + ', a ' + U.fmtDist(U.dist(foto, r)) + ' del punto reportado';
+  }
+
   function openReport(id) {
     const r0 = S.s.reports.find(x => x.id === id);
     const body = EV.ui.openDialog('Reporte ' + r0.id, '');
-    let cam = null;
-    let fotoDespues = null;
     const abiertos = { evidencia: true, prioridad: false, grupo: true, comentarios: false };
 
     function seccion(clave, titulo, contenido) {
@@ -37,18 +54,26 @@ EV.views.municipal = (function () {
       const junta = S.juntaOfZone(r.zone);
       const despues = r.after;
       const puedeCerrar = r.status !== 'resolved' && despues && despues.status === 'approved';
-      const faltaFoto = r.status !== 'resolved' && (!despues || despues.status === 'rejected');
 
       let origen = 'Vecino registrado';
       if (r.source === 'junta') origen = 'Escalado por una junta';
       else if (r.reserved) origen = 'Vecino (identidad reservada)';
 
+      // HU-26 Comparar fotos antes/después lado a lado
       let fotoDespuesHtml = '<div class="placeholder-box">Aún no hay foto de "después".</div>';
       if (despues) {
         let estadoFoto = 'Por validar';
         if (despues.status === 'approved') estadoFoto = 'Aprobada';
         if (despues.status === 'rejected') estadoFoto = 'Rechazada';
-        fotoDespuesHtml = `<figure><img src="${despues.photo.dataUrl}" alt="Foto de después"><figcaption>Después - ${U.fmtDateTime(despues.photo.ts)} - ${estadoFoto}</figcaption></figure>`;
+        fotoDespuesHtml = `<figure><img src="${despues.photo.dataUrl}" alt="Foto de después">
+          <figcaption>Después - ${U.fmtDateTime(despues.photo.ts)} - ${estadoFoto}<br>${ubicacionDespues(r)}</figcaption></figure>`;
+      }
+
+      let esperaCuadrilla = '';
+      if (necesitaFoto(r) && r.status === 'pending') {
+        esperaCuadrilla = '<p class="text-muted">Inicia la atención para que la tarea aparezca en la pestaña Cuadrilla.</p>';
+      } else if (necesitaFoto(r)) {
+        esperaCuadrilla = '<p class="text-muted">La cuadrilla tiene esta tarea en su pestaña y subirá ahí la foto de "después".</p>';
       }
 
       let grupoHtml = '';
@@ -70,7 +95,7 @@ EV.views.municipal = (function () {
           <figure><img src="${r.photo.dataUrl}" alt="Foto de antes"><figcaption>Antes - ${U.fmtDateTime(r.photo.ts)}</figcaption></figure>
           ${fotoDespuesHtml}
         </div>
-        ${despues && despues.status === 'rejected' ? `<p class="notice notice--warn">Evidencia rechazada: ${esc(despues.note)}. Se solicitó una nueva foto a la cuadrilla.</p>` : ''}
+        ${despues && despues.status === 'rejected' ? `<p class="notice notice--warn">Evidencia rechazada: ${esc(despues.note)}. Se pidió una nueva foto a la cuadrilla.</p>` : ''}
         ${despues && despues.status === 'pending' ? `<div class="form-group">
             <label for="rejNote">Motivo (obligatorio si rechazas)</label>
             <input id="rejNote" type="text" maxlength="120" aria-describedby="rejErr">
@@ -80,11 +105,7 @@ EV.views.municipal = (function () {
               <button class="btn btn-secondary" data-act="reject">Rechazar y pedir nueva foto</button>
             </div>
           </div>` : ''}
-        ${faltaFoto ? `<div class="card card--inner"><h4>Cuadrilla: subir foto de "después"</h4>
-            <p class="text-muted">Solo se admite una foto tomada con la cámara en el momento, con fecha, hora y ubicación.</p>
-            <div id="aCam"></div>
-            <button class="btn btn-primary" data-act="upload" id="upBtn" disabled>Subir foto de después</button>
-          </div>` : ''}
+        ${esperaCuadrilla}
         <div class="form-actions">
           <button class="btn btn-primary" data-act="resolve" ${puedeCerrar ? '' : 'disabled aria-describedby="rHint"'}>Marcar como resuelto</button>
           ${r.status === 'pending' ? '<button class="btn btn-secondary" data-act="start">Iniciar atención</button>' : ''}
@@ -111,6 +132,7 @@ EV.views.municipal = (function () {
           <div class="form-group"><button class="btn btn-secondary" type="submit">Aplicar</button></div>
         </form>`;
 
+      // HU-31 Responder un reporte derivado
       const conversacion = `${comentarios}
         <form id="rf" class="form-group">
           <label for="rt">Responder</label>
@@ -137,20 +159,6 @@ EV.views.municipal = (function () {
         d.addEventListener('toggle', () => { abiertos[d.dataset.sec] = d.open; });
       });
 
-      if (cam) {
-        cam.destroy();
-        cam = null;
-      }
-      EV.ui.currentCleanup = () => { if (cam) cam.destroy(); };
-      if (faltaFoto) {
-        cam = EV.camera.mount(body.querySelector('#aCam'), {
-          onChange: foto => {
-            fotoDespues = foto;
-            body.querySelector('#upBtn').disabled = !foto;
-          }
-        });
-      }
-
       body.querySelector('#ovf').addEventListener('submit', e => {
         e.preventDefault();
         const motivo = body.querySelector('#ovr').value.trim();
@@ -176,47 +184,31 @@ EV.views.municipal = (function () {
       };
     }
 
-    function miembros(r) {
-      const grupo = S.clusters()[r.id];
-      return grupo ? grupo.members : [r];
-    }
-
-    function avisarVecino(lista, texto, foto) {
-      const esDelVecino = lista.some(m => m.reporterId === S.USER || m.supporters.includes(S.USER));
-      if (esDelVecino) S.notify('vecino', texto, lista[0].id, foto);
-    }
-
     function accion(tipo, r) {
       if (tipo === 'start') {
         miembros(r).forEach(m => { m.status = 'active'; });
         avisarVecino(miembros(r), 'Tu reporte ' + r.id + ' ahora está en atención.');
+        S.notify('municipal', 'Nueva tarea para la cuadrilla: limpiar el punto del reporte ' + r.id + '.', r.id, null, 'cuadrilla');
         S.save();
-        EV.ui.toast('Reporte(s) en atención.', 'success');
+        EV.ui.toast('Reporte en atención. La cuadrilla ya lo ve en su pestaña.', 'success');
       }
 
-      // HU-25 Subir foto de "después"
-      if (tipo === 'upload' && fotoDespues) {
-        r.after = { photo: fotoDespues, status: 'pending', note: '', ts: Date.now() };
-        if (r.status === 'pending') miembros(r).forEach(m => { m.status = 'active'; });
-        S.save();
-        EV.ui.toast('Foto de "después" subida. Falta validarla.', 'success');
-      }
-
-      // HU-26 Comparar fotos antes/después
       if (tipo === 'approve') {
         r.after.status = 'approved';
         S.save();
         EV.ui.toast('Evidencia aprobada. Ya puedes marcar como resuelto.', 'success');
       }
+
+      // HU-26 Rechazar la evidencia y pedir una nueva foto a la cuadrilla
       if (tipo === 'reject') {
         const motivo = body.querySelector('#rejNote').value.trim();
         if (!EV.ui.setError(body, 'rejErr', motivo ? '' : 'Indica por qué rechazas la evidencia.')) return;
         EV.ui.confirmar('¿Rechazar la evidencia y pedir una nueva foto a la cuadrilla?', 'Sí, rechazar', () => {
           r.after.status = 'rejected';
           r.after.note = motivo;
-          S.notify('municipal', 'Se solicitó una nueva foto de "después" a la cuadrilla para ' + r.id + '.', r.id);
+          S.notify('municipal', 'Cuadrilla: se rechazó la foto de ' + r.id + ' (' + motivo + '). Toma una nueva foto.', r.id, null, 'cuadrilla');
           S.save();
-          EV.ui.toast('Evidencia rechazada; se solicitó una nueva foto.', 'warn');
+          EV.ui.toast('Evidencia rechazada; se pidió una nueva foto a la cuadrilla.', 'warn');
         });
       }
 
@@ -247,7 +239,7 @@ EV.views.municipal = (function () {
     draw();
   }
 
-  // HU-17 Ver reportes de la jurisdicción y HU-18 Filtrar reportes por zona, fecha y estado
+  // HU-17 Ver reportes de la jurisdicción, HU-18 Filtrar reportes por zona, fecha y estado y HU-22 Agrupar reportes
   function panel(root) {
     const filtros = S.s.filters;
     const opcionesZona = S.ZONES.map(z => `<option value="${z.id}">${esc(z.name)}</option>`).join('');
@@ -267,7 +259,7 @@ EV.views.municipal = (function () {
             <option value="resolved">Resuelto</option>
             <option value="todos">Todos, incluidos resueltos</option>
           </select></div>
-        <div class="form-group"><label for="fo">
+        <div class="form-group"><label for="fo">Ordenar por</label>
           <select id="fo">
             <option value="prioridad">Prioridad (mayor primero)</option>
             <option value="recientes">Más recientes</option>
@@ -283,6 +275,10 @@ EV.views.municipal = (function () {
     const $ = selector => root.querySelector(selector);
     const mapa = EV.map.create('pMap', { lat: -12.045, lng: -77.03 }, 13);
     const campos = { fz: 'zona', fd: 'desde', fh: 'hasta', fe: 'estado', fo: 'orden' };
+    const dialogo = document.getElementById('dialog');
+    let primeraVez = true;
+    let anteriores = {};
+    let saliendo = false;
 
     Object.keys(campos).forEach(idCampo => {
       const clave = campos[idCampo];
@@ -304,10 +300,20 @@ EV.views.municipal = (function () {
       S.save();
     });
 
-    let primeraVez = true;
-    let anteriores = {};
-    let saliendo = false;
-    const dialogo = document.getElementById('dialog');
+    function filtrar() {
+      const f = S.s.filters;
+      const desde = f.desde ? new Date(f.desde + 'T00:00:00').getTime() : -Infinity;
+      const hasta = f.hasta ? new Date(f.hasta + 'T23:59:59').getTime() : Infinity;
+      const lista = S.s.reports
+        .filter(r =>
+          (f.zona === 'all' || r.zone === f.zona) &&
+          (f.estado === 'todos' || (f.estado === 'all' ? r.status !== 'resolved' : r.status === f.estado)) &&
+          r.createdAt >= desde && r.createdAt <= hasta)
+        .map(r => ({ r: r, p: S.priority(r) }));
+      if (f.orden === 'prioridad') lista.sort((a, b) => (b.p.effScore - a.p.effScore) || (a.r.createdAt - b.r.createdAt));
+      else lista.sort((a, b) => b.r.createdAt - a.r.createdAt);
+      return lista;
+    }
 
     function estadoActual(id) {
       const r = S.s.reports.find(x => x.id === id);
@@ -332,6 +338,7 @@ EV.views.municipal = (function () {
       }
       tarjetas.forEach(li => {
         const alto = li.offsetHeight;
+        const estilo = getComputedStyle(li);
         li.style.overflow = 'hidden';
         const desliza = li.animate(
           [{ transform: 'none', opacity: 1 }, { transform: 'translateX(110%)', opacity: 0 }],
@@ -340,7 +347,7 @@ EV.views.municipal = (function () {
         desliza.onfinish = () => {
           const cierra = li.animate(
             [
-              { height: alto + 'px', paddingTop: getComputedStyle(li).paddingTop, paddingBottom: getComputedStyle(li).paddingBottom, marginBottom: getComputedStyle(li).marginBottom },
+              { height: alto + 'px', paddingTop: estilo.paddingTop, paddingBottom: estilo.paddingBottom, marginBottom: estilo.marginBottom },
               { height: '0px', paddingTop: '0px', paddingBottom: '0px', marginBottom: '0px', borderWidth: '0px' }
             ],
             { duration: 280, easing: 'ease', fill: 'forwards' }
@@ -353,24 +360,33 @@ EV.views.municipal = (function () {
       });
     }
 
+    function guardarPosiciones() {
+      const posiciones = {};
+      $('#pList').querySelectorAll('[data-open]').forEach(boton => {
+        posiciones[boton.dataset.open] = boton.closest('li').getBoundingClientRect().top;
+      });
+      return posiciones;
+    }
+
+    function animarReacomodo(posiciones) {
+      if (EV.ui.movimientoReducido()) return;
+      $('#pList').querySelectorAll('[data-open]').forEach(boton => {
+        const antes = posiciones[boton.dataset.open];
+        if (antes === undefined) return;
+        const li = boton.closest('li');
+        const distancia = antes - li.getBoundingClientRect().top;
+        if (Math.abs(distancia) < 2) return;
+        li.animate(
+          [{ transform: 'translateY(' + distancia + 'px)' }, { transform: 'none' }],
+          { duration: 500, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+        );
+      });
+    }
+
     function draw() {
       if (saliendo) return;
-      const f = S.s.filters;
       const todos = S.s.reports;
-      const desde = f.desde ? new Date(f.desde + 'T00:00:00').getTime() : -Infinity;
-      const hasta = f.hasta ? new Date(f.hasta + 'T23:59:59').getTime() : Infinity;
-
-      let lista = todos.filter(r =>
-        (f.zona === 'all' || r.zone === f.zona) &&
-        (f.estado === 'todos' || (f.estado === 'all' ? r.status !== 'resolved' : r.status === f.estado)) &&
-        r.createdAt >= desde && r.createdAt <= hasta
-      );
-      lista = lista.map(r => ({ r: r, p: S.priority(r) }));
-      if (f.orden === 'prioridad') {
-        lista.sort((a, b) => (b.p.effScore - a.p.effScore) || (a.r.createdAt - b.r.createdAt));
-      } else {
-        lista.sort((a, b) => b.r.createdAt - a.r.createdAt);
-      }
+      const lista = filtrar();
 
       const ids = lista.map(x => x.r.id);
       const recienResueltos = Object.keys(anteriores).filter(id =>
@@ -414,10 +430,7 @@ EV.views.municipal = (function () {
         }
       }
 
-      const posiciones = {};
-      $('#pList').querySelectorAll('[data-open]').forEach(boton => {
-        posiciones[boton.dataset.open] = boton.closest('li').getBoundingClientRect().top;
-      });
+      const posiciones = guardarPosiciones();
       if (lista.length) {
         const grupos = S.clusters();
         $('#pList').innerHTML = `<p class="status-text">${lista.length} reporte(s) con los filtros aplicados.</p><ul class="item-list">` + lista.map(x => {
@@ -436,28 +449,105 @@ EV.views.municipal = (function () {
       } else {
         $('#pList').innerHTML = '<p class="empty">No hay reportes con estos filtros.</p>';
       }
-
-      if (!EV.ui.movimientoReducido()) {
-        $('#pList').querySelectorAll('[data-open]').forEach(boton => {
-          const antes = posiciones[boton.dataset.open];
-          if (antes === undefined) return;
-          const li = boton.closest('li');
-          const distancia = antes - li.getBoundingClientRect().top;
-          if (Math.abs(distancia) < 2) return;
-          li.animate(
-            [{ transform: 'translateY(' + distancia + 'px)' }, { transform: 'none' }],
-            { duration: 500, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
-          );
-        });
-      }
+      animarReacomodo(posiciones);
     }
 
     root.addEventListener('click', e => {
       const b = e.target.closest('[data-open]');
       if (b) openReport(b.dataset.open);
     });
+    dialogo.addEventListener('close', draw);
     draw();
-    return { refresh: draw, destroy: () => { if (mapa) mapa.destroy(); } };
+    return {
+      refresh: draw,
+      destroy: () => {
+        dialogo.removeEventListener('close', draw);
+        if (mapa) mapa.destroy();
+      }
+    };
+  }
+
+  // HU-25 Subir foto de "después" y HU-26 recibir el pedido de una nueva foto
+  function cuadrilla(root) {
+    root.innerHTML = `<div class="card"><h2>Tareas de la cuadrilla</h2>
+        <p class="text-muted">Puntos en atención que la cuadrilla debe limpiar. Al terminar, toma la foto de "después" con la cámara: se guarda con fecha, hora y ubicación, y queda junto a la foto de "antes".</p>
+        <div id="cTareas" aria-live="polite"></div>
+      </div>
+      <div class="card"><h2>Fotos enviadas por validar</h2><div id="cEnviadas" aria-live="polite"></div></div>`;
+
+    function tarjeta(r, boton) {
+      const rechazada = r.after && r.after.status === 'rejected';
+      return `<li class="item ${rechazada ? 'item--alerta' : ''}">
+        <img class="thumb" src="${r.photo.dataUrl}" alt="Foto de antes del reporte ${esc(r.id)}">
+        <div class="item-main"><strong>${esc(r.id)}</strong> ${rechazada ? '<span class="badge badge--late">Nueva foto solicitada</span>' : EV.ui.badge(r.status)}<br>
+          <span class="text-muted">${esc(S.zoneById(r.zone).name)} - ${U.fmtCoords(r.lat, r.lng)}</span>
+          ${rechazada ? `<br><span class="text-muted">Motivo del rechazo: ${esc(r.after.note)}</span>` : ''}
+        </div>
+        ${boton}
+      </li>`;
+    }
+
+    function draw() {
+      const enAtencion = S.s.reports.filter(r => r.status === 'active');
+      const tareas = enAtencion.filter(necesitaFoto)
+        .sort((a, b) => Number(Boolean(b.after)) - Number(Boolean(a.after)) || a.createdAt - b.createdAt);
+      const enviadas = enAtencion.filter(r => r.after && r.after.status === 'pending');
+
+      if (tareas.length) {
+        root.querySelector('#cTareas').innerHTML = '<ul class="item-list">' + tareas.map(r =>
+          tarjeta(r, `<button class="btn btn-primary btn-sm" data-foto="${r.id}">Subir foto de después</button>`)
+        ).join('') + '</ul>';
+      } else {
+        root.querySelector('#cTareas').innerHTML = '<p class="empty">No hay puntos por limpiar. Las tareas aparecen cuando el panel inicia la atención de un reporte.</p>';
+      }
+
+      if (enviadas.length) {
+        root.querySelector('#cEnviadas').innerHTML = '<ul class="item-list">' + enviadas.map(r =>
+          tarjeta(r, `<span class="text-muted">Enviada el ${U.fmtDateTime(r.after.ts)}</span>`)
+        ).join('') + '</ul>';
+      } else {
+        root.querySelector('#cEnviadas').innerHTML = '<p class="empty">No hay fotos esperando validación.</p>';
+      }
+    }
+
+    function subirFoto(id) {
+      const r = S.s.reports.find(x => x.id === id);
+      let foto = null;
+      const body = EV.ui.openDialog('Foto de después - ' + r.id, `
+        <div class="before-after">
+          <figure><img src="${r.photo.dataUrl}" alt="Foto de antes"><figcaption>Antes - ${U.fmtDateTime(r.photo.ts)}</figcaption></figure>
+          <div id="aCam"></div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" id="upBtn" disabled>Subir foto de después</button>
+        </div>`);
+      const cam = EV.camera.mount(body.querySelector('#aCam'), {
+        onChange: nueva => {
+          foto = nueva;
+          body.querySelector('#upBtn').disabled = !nueva;
+        }
+      });
+      EV.ui.currentDetail = null;
+      EV.ui.currentCleanup = () => cam.destroy();
+      cam.abrir();
+
+      body.querySelector('#upBtn').addEventListener('click', () => {
+        if (!foto) return;
+        r.after = { photo: foto, status: 'pending', note: '', ts: Date.now() };
+        S.quitarAvisos('cuadrilla', r.id);
+        S.notify('municipal', 'La cuadrilla subió la foto de "después" de ' + r.id + '. Falta validarla en el panel.', r.id);
+        S.save();
+        EV.ui.closeDialog();
+        EV.ui.toast('Foto enviada. El panel la comparará con la de antes.', 'success');
+      });
+    }
+
+    root.addEventListener('click', e => {
+      const b = e.target.closest('[data-foto]');
+      if (b) subirFoto(b.dataset.foto);
+    });
+    draw();
+    return { refresh: draw };
   }
 
   // HU-29 Compartir estado con la junta y HU-20 configurar el tiempo límite
@@ -552,7 +642,7 @@ EV.views.municipal = (function () {
 
     function abrirHilo(id) {
       const body = EV.ui.openDialog('Solicitud ' + id, '');
-      function d() {
+      function dibujarHilo() {
         const s = S.s.solicitudes.find(x => x.id === id);
         const mensajes = s.thread.slice().sort((a, b) => a.ts - b.ts);
         let hilo = '<p class="text-muted">Sin mensajes.</p>';
@@ -582,8 +672,8 @@ EV.views.municipal = (function () {
           EV.ui.toast('Respuesta enviada.', 'success');
         });
       }
-      EV.ui.currentDetail = d;
-      d();
+      EV.ui.currentDetail = dibujarHilo;
+      dibujarHilo();
     }
 
     draw();
@@ -594,6 +684,7 @@ EV.views.municipal = (function () {
     checkAlerts: checkAlerts,
     tabs: [
       { id: 'panel', icon: '../assets/panel.svg', label: 'Panel', render: panel },
+      { id: 'cuadrilla', icon: '../assets/cuadrilla.svg', label: 'Cuadrilla', render: cuadrilla },
       { id: 'zonas', icon: '../assets/zonas.svg', label: 'Zonas', render: zonas },
       { id: 'solicitudes', icon: '../assets/solicitud.svg', label: 'Solicitudes', render: solicitudes }
     ]

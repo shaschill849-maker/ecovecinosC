@@ -14,17 +14,7 @@
   <link rel="stylesheet" href="../css/styles.css">
 </head>
 <body>
-  <script>
-    document.documentElement.classList.add('js');
-    (function () {
-      let visto = false;
-      try { visto = sessionStorage.getItem('ecovecinos.splash') === 'si'; } catch (e) { visto = true; }
-      const sinMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (visto || sinMovimiento) return;
-      document.write('<div id="splash" aria-hidden="true"><div class="splash-logo"><img src="../assets/logo.svg" alt=""><span>EcoVecinos</span></div><p class="splash-hint">Toca para continuar</p></div>');
-      setTimeout(() => { const s = document.getElementById('splash'); if (s) s.remove(); }, 4000);
-    })();
-  </script>
+  <script>document.documentElement.classList.add('js');</script>
   <a class="skip-link" href="#demo">Saltar a la aplicación</a>
 
   <header class="header">
@@ -41,17 +31,41 @@
 
   <main id="inicio">
     <section class="hero" aria-labelledby="hero-title">
-      <div class="container hero-grid">
-        <div>
+      <svg class="hero-mapa" aria-hidden="true" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" focusable="false">
+        <g class="hero-zonas">
+          <circle cx="180" cy="160" r="260"/>
+          <circle cx="1300" cy="760" r="320"/>
+          <rect x="190" y="180" width="200" height="170" rx="18"/>
+          <rect x="1010" y="180" width="210" height="170" rx="18"/>
+          <rect x="730" y="640" width="220" height="150" rx="18"/>
+          <rect x="190" y="640" width="200" height="150" rx="18"/>
+        </g>
+        <g class="hero-calles">
+          <path pathLength="1" d="M160 0V900"/>
+          <path pathLength="1" d="M420 0V900"/>
+          <path pathLength="1" d="M700 0V900"/>
+          <path pathLength="1" d="M980 0V900"/>
+          <path pathLength="1" d="M1250 0V900"/>
+          <path pathLength="1" d="M0 150H1440"/>
+          <path pathLength="1" d="M0 380H1440"/>
+          <path pathLength="1" d="M0 610H1440"/>
+          <path pathLength="1" d="M0 820H1440"/>
+        </g>
+        <g class="hero-avenidas">
+          <path pathLength="1" d="M-40 760C300 640 520 520 760 470S1220 300 1480 120"/>
+          <path pathLength="1" d="M560 -20C600 220 520 420 600 640S760 860 820 940"/>
+        </g>
+      </svg>
+      <div class="hero-pines" aria-hidden="true"></div>
+      <div class="container hero-contenido">
+        <div class="hero-logo" aria-hidden="true">
+          <span class="hero-marca anima"><img src="../assets/logo.svg" alt=""><span>EcoVecinos</span></span>
+        </div>
+        <div class="hero-texto">
           <h1 id="hero-title" class="anima">Reporta la basura de tu barrio y mira cómo se resuelve</h1>
           <p class="hero-lead anima">EcoVecinos conecta a vecinos, juntas vecinales y municipalidad en un solo lugar: tú reportas en menos de un minuto y ves qué pasó con tu reporte.</p>
           <a class="btn btn-primary anima" href="#demo">Probar la demo</a>
         </div>
-        <ul class="hero-points" aria-label="Beneficios principales">
-          <li class="anima"><strong>Un reporte, un código.</strong> Foto con fecha, hora y ubicación; sabes siempre en qué estado está.</li>
-          <li class="anima"><strong>Sin confrontaciones.</strong> Puedes reportar de forma reservada; la app nunca pide datos de otras personas.</li>
-          <li class="anima"><strong>Limpieza verificada.</strong> Un reporte se cierra solo con una foto de "después" aprobada.</li>
-        </ul>
       </div>
     </section>
 
@@ -118,6 +132,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="../js/util.js"></script>
+  <script src="../js/portada.js"></script>
   <script src="../js/geo.js"></script>
   <script src="../js/camera.js"></script>
   <script src="../js/store.js"></script>

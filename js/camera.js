@@ -1,6 +1,5 @@
 EV.camera = (function () {
   const activos = [];
-  const sinMovimiento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function stopAll() {
     activos.forEach(stream => stream.getTracks().forEach(t => t.stop()));
@@ -56,8 +55,8 @@ EV.camera = (function () {
     const btnRepetir = root.querySelector('[data-cam=retake]');
     const btnPrueba = root.querySelector('[data-cam=demo]');
     let stream = null;
-    let foto = null;
     let espera = null;
+    let destruida = false;
 
     function detener() {
       if (stream) {
@@ -76,6 +75,34 @@ EV.camera = (function () {
       btnPrueba.hidden = !prueba;
     }
 
+    async function abrirCamara() {
+      if (stream) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        msg.textContent = 'Este navegador no permite usar la cámara. Puedes usar una foto de prueba.';
+        btnPrueba.hidden = false;
+        return;
+      }
+      msg.textContent = 'Abriendo la cámara...';
+      try {
+        const nuevo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        if (destruida) {
+          nuevo.getTracks().forEach(t => t.stop());
+          return;
+        }
+        stream = nuevo;
+        activos.push(stream);
+        video.srcObject = stream;
+        vacio.hidden = true;
+        video.hidden = false;
+        botones(false, true, false, false);
+        msg.textContent = 'Apunta al foco de basura y toma la foto.';
+      } catch (err) {
+        if (destruida) return;
+        msg.textContent = 'No pudimos acceder a la cámara. Puedes usar una foto de prueba.';
+        btnPrueba.hidden = false;
+      }
+    }
+
     function mostrarFoto(nueva) {
       clearTimeout(espera);
       img.src = nueva.dataUrl;
@@ -85,7 +112,7 @@ EV.camera = (function () {
       marco.classList.remove('disparo', 'procesando', 'revelado');
       void marco.offsetWidth;
 
-      if (sinMovimiento()) {
+      if (EV.ui.movimientoReducido()) {
         video.hidden = true;
         terminar();
         return;
@@ -102,7 +129,6 @@ EV.camera = (function () {
 
       function terminar() {
         marco.classList.remove('disparo');
-        foto = nueva;
         botones(false, false, true, false);
         if (nueva.source === 'demo') msg.textContent = 'Foto de prueba registrada (no es una foto real).';
         else msg.textContent = 'Foto capturada. Puedes repetirla si no se ve bien.';
@@ -112,7 +138,6 @@ EV.camera = (function () {
 
     function quitarFoto() {
       clearTimeout(espera);
-      foto = null;
       img.hidden = true;
       img.removeAttribute('src');
       marco.classList.remove('disparo', 'procesando', 'revelado');
@@ -120,25 +145,7 @@ EV.camera = (function () {
       if (opciones.onChange) opciones.onChange(null);
     }
 
-    btnAbrir.addEventListener('click', async () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        msg.textContent = 'Este navegador no permite usar la cámara. Puedes usar una foto de prueba.';
-        btnPrueba.hidden = false;
-        return;
-      }
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-        activos.push(stream);
-        video.srcObject = stream;
-        vacio.hidden = true;
-        video.hidden = false;
-        botones(false, true, false, false);
-        msg.textContent = 'Apunta al foco de basura y toma la foto.';
-      } catch (err) {
-        msg.textContent = 'No pudimos acceder a la cámara. Puedes usar una foto de prueba.';
-        btnPrueba.hidden = false;
-      }
-    });
+    btnAbrir.addEventListener('click', abrirCamara);
 
     btnTomar.addEventListener('click', () => {
       if (!video.videoWidth) {
@@ -165,7 +172,7 @@ EV.camera = (function () {
       quitarFoto();
       vacio.hidden = false;
       botones(true, false, false, false);
-      btnAbrir.click();
+      abrirCamara();
     });
 
     btnPrueba.addEventListener('click', () => {
@@ -174,7 +181,7 @@ EV.camera = (function () {
     });
 
     return {
-      getPhoto: () => foto,
+      abrir: abrirCamara,
       reset: () => {
         detener();
         quitarFoto();
@@ -183,6 +190,7 @@ EV.camera = (function () {
         botones(true, false, false, false);
       },
       destroy: () => {
+        destruida = true;
         clearTimeout(espera);
         detener();
       }
