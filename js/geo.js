@@ -14,7 +14,7 @@ EV.geo = (function () {
           resolve({ ok: true });
         },
         () => resolve({ ok: false }),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
       );
     });
   }

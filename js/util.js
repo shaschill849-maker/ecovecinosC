@@ -83,17 +83,59 @@ EV.ui = {
   toast(mensaje, tipo) {
     const caja = document.getElementById('toasts');
     if (!caja) return;
-    while (caja.children.length >= 2) {
-      caja.firstElementChild.remove();
-    }
+    const MAX = 3;
     const t = document.createElement('div');
     t.className = 'toast toast--' + (tipo || 'info');
     t.textContent = mensaje;
-    caja.appendChild(t);
-    setTimeout(() => {
-      t.classList.add('toast--out');
-      setTimeout(() => t.remove(), 300);
-    }, 4000);
+
+    EV.ui.moverToasts(caja, () => {
+      caja.appendChild(t);
+      const visibles = caja.querySelectorAll('.toast:not(.toast--saliendo)');
+      for (let i = 0; i < visibles.length - MAX; i++) {
+        EV.ui.quitarToast(visibles[i], 'derecha');
+      }
+    });
+
+    t._timer = setTimeout(() => EV.ui.quitarToast(t, 'abajo'), 4000);
+  },
+
+  quitarToast(t, hacia) {
+    if (!t.isConnected || t.classList.contains('toast--saliendo')) return;
+    clearTimeout(t._timer);
+    t.classList.add('toast--saliendo');
+    const terminar = () => {
+      const caja = t.parentNode;
+      if (caja) EV.ui.moverToasts(caja, () => t.remove());
+    };
+    if (EV.ui.movimientoReducido()) {
+      terminar();
+      return;
+    }
+    const estilo = getComputedStyle(t);
+    const desde = { transform: estilo.transform === 'none' ? 'translate(0px, 0px)' : estilo.transform, opacity: estilo.opacity };
+    const hasta = hacia === 'derecha'
+      ? { transform: 'translate(' + Math.round(t.offsetWidth * 1.2) + 'px, 0px)', opacity: 0 }
+      : { transform: 'translate(0px, 24px) scale(0.97)', opacity: 0 };
+    t.getAnimations().forEach(a => a.cancel());
+    t.style.animation = 'none';
+    const salida = t.animate([desde, hasta], { duration: 320, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' });
+    salida.onfinish = terminar;
+  },
+
+  moverToasts(caja, cambio) {
+    const antes = new Map();
+    caja.querySelectorAll('.toast').forEach(el => antes.set(el, el.getBoundingClientRect().top));
+    cambio();
+    if (EV.ui.movimientoReducido()) return;
+    caja.querySelectorAll('.toast').forEach(el => {
+      if (!antes.has(el)) return;
+      const dy = antes.get(el) - el.getBoundingClientRect().top;
+      if (!dy) return;
+      el.animate(
+        [{ transform: 'translateY(' + dy + 'px)' }, { transform: 'translateY(0)' }],
+        { duration: 450, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', composite: 'add' }
+      );
+    });
   },
 
   avisoUbicacionDemo() {

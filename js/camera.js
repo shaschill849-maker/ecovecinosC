@@ -57,6 +57,7 @@ EV.camera = (function () {
     let stream = null;
     let espera = null;
     let destruida = false;
+    let abriendo = false;
 
     function detener() {
       if (stream) {
@@ -76,13 +77,14 @@ EV.camera = (function () {
     }
 
     async function abrirCamara() {
-      if (stream) return;
+      if (stream || abriendo) return;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         msg.textContent = 'Este navegador no permite usar la cámara. Puedes usar una foto de prueba.';
         btnPrueba.hidden = false;
         return;
       }
-      msg.textContent = 'Abriendo la cámara...';
+      msg.textContent = 'Abriendo la cámara...';''
+      abriendo = true;
       try {
         const nuevo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         if (destruida) {
@@ -100,6 +102,8 @@ EV.camera = (function () {
         if (destruida) return;
         msg.textContent = 'No pudimos acceder a la cámara. Puedes usar una foto de prueba.';
         btnPrueba.hidden = false;
+      } finally {
+        abriendo = false;
       }
     }
 

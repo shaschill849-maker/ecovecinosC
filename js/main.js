@@ -48,7 +48,8 @@ EV.app = (function () {
 
   function goTab(id) {
     selectTab(id, true, true);
-    window.scrollTo({ top: $('demo').offsetTop - 10, behavior: 'smooth' });
+    const alto = document.querySelector('.header').offsetHeight;
+    window.scrollTo({ top: $('demo').offsetTop - alto - 8, behavior: 'smooth' });
   }
 
   function marcarRol() {
@@ -142,7 +143,7 @@ EV.app = (function () {
           observador.unobserve(entrada.target);
         }
       });
-    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    }, { threshold: 0, rootMargin: '0px 0px -40px 0px' });
     elementos.forEach(el => observador.observe(el));
   }
 
@@ -175,13 +176,16 @@ EV.app = (function () {
       }
     });
     dlg.addEventListener('click', e => {
-      if (e.target === dlg) EV.ui.closeDialog();
+      if (e.target !== dlg) return;
+      const r = dlg.getBoundingClientRect();
+      const dentro = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!dentro) EV.ui.closeDialog();
     });
 
     const tabs = $('tablist');
     tabs.addEventListener('click', e => {
       const b = e.target.closest('[data-tab]');
-      if (b) selectTab(b.dataset.tab, false, true);
+      if (b && b.getAttribute('aria-selected') !== 'true') selectTab(b.dataset.tab, false, true);
     });
     tabs.addEventListener('keydown', e => {
       const lista = Array.from(tabs.querySelectorAll('.tab'));
@@ -230,7 +234,8 @@ EV.app = (function () {
 
     EV.selector.mejorarTodos(document);
     const observador = new MutationObserver(() => EV.selector.mejorarTodos(document));
-    observador.observe(document.body, { childList: true, subtree: true });
+    observador.observe($('tabpanel'), { childList: true, subtree: true });
+    observador.observe($('dialogBody'), { childList: true, subtree: true });
 
     setRole(role);
     mostrarPagina();

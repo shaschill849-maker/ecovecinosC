@@ -67,6 +67,7 @@ EV.portada = (function () {
     logo.style.visibility = llego ? 'hidden' : '';
     marca.style.opacity = llego ? '' : '0';
     texto.style.opacity = Math.max(0, 1 - p * 2.2);
+    texto.style.visibility = p >= 0.45 ? 'hidden' : '';
     texto.style.transform = `translateY(${dy}px)`;
     pines.style.opacity = Math.max(0, 1 - p * 1.5);
   }

@@ -357,17 +357,19 @@ dialog::backdrop { background: rgba(20, 30, 24, 0.45); backdrop-filter: blur(2px
 .confirm-dialog p { margin: var(--space-1) 0 0.25rem; color: var(--color-text-muted); }
 
 .toasts { position: fixed; bottom: var(--space-2); left: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; align-items: center; gap: var(--space-1); z-index: 4000; pointer-events: none; }
-.toast { background: var(--color-text-main); color: #fff; padding: 0.8rem 1.2rem; border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); max-width: 480px; animation: deslizar 0.35s var(--ease); transition: opacity 0.3s ease, transform 0.3s ease; }
+.toast { background: var(--color-text-main); color: #fff; padding: 0.8rem 1.2rem; border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); max-width: 480px; animation: toast-entra 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.4, 0, 1, 1); }
 .toast--success { background: #1b5e3d; }
 .toast--error { background: #8f1d14; }
 .toast--warn { background: #6b4600; }
-.toast--out { opacity: 0; transform: translateY(8px); }
+.toast--out { opacity: 0; transform: translateY(24px) scale(0.97); }
+.toast--derecha { opacity: 0; transform: translateX(120%); }
 
 /* Animaciones */
 
 @keyframes aparecer { from { opacity: 0; } to { opacity: 1; } }
 @keyframes subir { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 @keyframes deslizar { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes toast-entra { 0%   { opacity: 0; transform: translateY(110%) scale(0.96); } 55%  { opacity: 1; transform: translateY(-6px) scale(1.01); } 75%  { transform: translateY(2px) scale(1); } 100% { opacity: 1; transform: none; }}
 @keyframes latido { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
 @keyframes campana { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(14deg); } 40% { transform: rotate(-12deg); } 60% { transform: rotate(8deg); } 80% { transform: rotate(-4deg); } }
 @keyframes pop { 0% { transform: scale(0); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }

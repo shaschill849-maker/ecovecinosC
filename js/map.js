@@ -14,7 +14,9 @@ EV.map = (function () {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
     const capa = L.layerGroup().addTo(map);
-    setTimeout(() => map.invalidateSize(), 80);
+    let vivo = true;
+    setTimeout(() => { if (vivo) map.invalidateSize(); }, 80);
+    setTimeout(() => { if (vivo) map.invalidateSize(); }, 400);
 
     return {
       map: map,
@@ -37,6 +39,7 @@ EV.map = (function () {
         }
       },
       destroy() {
+        vivo = false;
         map.remove();
       }
     };

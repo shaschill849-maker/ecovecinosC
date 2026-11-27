@@ -473,8 +473,14 @@ EV.views.vecino = (function () {
       radio = Number(e.target.value);
       draw();
     });
-    root.querySelector('#loc').addEventListener('click', async () => {
+    root.querySelector('#loc').addEventListener('click', async e => {
+      const boton = e.currentTarget;
+      boton.disabled = true;
+      boton.textContent = 'Buscando ubicación...';
+      EV.ui.toast('Buscando tu ubicación...', 'info');
       const resultado = await EV.geo.request();
+      boton.disabled = false;
+      boton.textContent = 'Actualizar mi ubicación';
       S.s.settings.geoConsent = true;
       S.s.settings.geoPermitido = resultado.ok;
       S.save();
